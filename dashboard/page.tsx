@@ -3,7 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/providers/AuthProvider'
-import { getSupabaseClient } from '@/util/supabase/client'
+import { getSupabaseClient } from '@/lib/supabase/client'
 
 export default function DashboardPage() {
   const { session, loading } = useAuth()
