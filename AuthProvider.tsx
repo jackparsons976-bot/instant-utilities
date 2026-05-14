@@ -8,7 +8,7 @@ import {
   useRef,
 } from 'react'
 import type { Session } from '@supabase/supabase-js'
-import { getSupabaseClient } from '@/util/supabase/client'
+import { getSupabaseClient } from '@/lib/supabase/client'
 
 interface AuthContextValue {
   session: Session | null
