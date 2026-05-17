@@ -142,18 +142,29 @@ export default function EmergencyPage() {
   async function triggerSOS() {
     if (!session || !facilityId) return
     setSosActive(true)
-    const sb = getSupabaseClient()
-    const { error } = await sb.schema('emergency').from('sos_events').insert({
-      facility_id: facilityId,
-      user_id: session.user.id,
-      status: 'pending',
-    })
-    if (error) {
-      toast('Failed to send SOS: ' + error.message, 'error')
+    try {
+      const res = await fetch('/api/sos', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ facility_id: facilityId }),
+      })
+      if (res.status === 429) {
+        toast('Too many SOS alerts — please wait before sending another.', 'error')
+        setSosActive(false)
+      } else if (!res.ok) {
+        const data = await res.json().catch(() => ({}))
+        toast('Failed to send SOS: ' + (data.error ?? res.statusText), 'error')
+        setSosActive(false)
+      } else {
+        toast('SOS alert sent — help is on the way.', 'success')
+        setTimeout(() => setSosActive(false), 5000)
+      }
+    } catch {
+      toast('Network error — could not send SOS.', 'error')
       setSosActive(false)
-    } else {
-      toast('SOS alert sent — help is on the way.', 'success')
-      setTimeout(() => setSosActive(false), 5000)
     }
   }
 
