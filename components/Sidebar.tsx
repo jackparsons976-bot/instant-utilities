@@ -17,6 +17,19 @@ const MANAGER_NAV: NavItem[] = [
   { label: 'Announcements', href: '/dashboard/announcements',icon: '📢' },
   { label: 'QR Nodes',      href: '/dashboard/qr',          icon: '📱' },
   { label: 'Marketplace',   href: '/dashboard/marketplace',  icon: '🛒' },
+  { label: 'Messages',      href: '/dashboard/messages',     icon: '✉️' },
+]
+
+const ADMIN_NAV: NavItem[] = [
+  { label: 'Overview',      href: '/dashboard',              icon: '◻' },
+  { label: 'Emergency',     href: '/dashboard/emergency',    icon: '🆘' },
+  { label: 'Residents',     href: '/dashboard/residents',    icon: '👥' },
+  { label: 'Maintenance',   href: '/dashboard/maintenance',  icon: '🔧' },
+  { label: 'Announcements', href: '/dashboard/announcements',icon: '📢' },
+  { label: 'QR Nodes',      href: '/dashboard/qr',          icon: '📱' },
+  { label: 'Marketplace',   href: '/dashboard/marketplace',  icon: '🛒' },
+  { label: 'Messages',      href: '/dashboard/messages',     icon: '✉️' },
+  { label: 'Admin',         href: '/admin',                  icon: '⚙️' },
 ]
 
 const RESIDENT_NAV: NavItem[] = [
@@ -29,12 +42,13 @@ const RESIDENT_NAV: NavItem[] = [
 
 interface SidebarProps {
   role?: string
+  onItemClick?: () => void
 }
 
-export function Sidebar({ role = 'resident' }: SidebarProps) {
+export function Sidebar({ role = 'resident', onItemClick }: SidebarProps) {
   const pathname = usePathname()
-  const items = role === 'facility_manager' || role === 'platform_admin'
-    ? MANAGER_NAV
+  const items = role === 'platform_admin' ? ADMIN_NAV
+    : role === 'facility_manager' ? MANAGER_NAV
     : RESIDENT_NAV
 
   return (
@@ -45,6 +59,7 @@ export function Sidebar({ role = 'resident' }: SidebarProps) {
           key={item.href}
           href={item.href}
           className={`sidebar-item ${pathname === item.href ? 'active' : ''}`}
+          onClick={onItemClick}
         >
           <span>{item.icon}</span>
           <span>{item.label}</span>

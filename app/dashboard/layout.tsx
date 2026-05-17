@@ -1,14 +1,16 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/providers/AuthProvider'
 import { AppNav } from '@/components/AppNav'
 import { Sidebar } from '@/components/Sidebar'
+import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { session, loading } = useAuth()
   const router = useRouter()
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
     if (!loading && !session) router.replace('/login')
@@ -17,7 +19,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   if (loading) {
     return (
       <div className="center">
-        <p style={{ color: 'var(--muted)', fontSize: '0.9rem' }}>Loading…</p>
+        <div className="spinner" />
       </div>
     )
   }
@@ -28,11 +30,26 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <AppNav />
+      <AppNav onMenuToggle={() => setMobileMenuOpen(v => !v)} />
       <div className="app-layout">
         <Sidebar role={role} />
-        <main className="main-content">{children}</main>
+        <main className="main-content">
+          <ErrorBoundary>
+            {children}
+          </ErrorBoundary>
+        </main>
       </div>
+
+      {/* Mobile sidebar */}
+      {mobileMenuOpen && (
+        <>
+          <div className="sidebar-overlay" style={{ display: 'block' }} onClick={() => setMobileMenuOpen(false)} />
+          <div className="sidebar-mobile">
+            <button className="sidebar-mobile-close" onClick={() => setMobileMenuOpen(false)}>✕</button>
+            <Sidebar role={role} onItemClick={() => setMobileMenuOpen(false)} />
+          </div>
+        </>
+      )}
     </div>
   )
 }

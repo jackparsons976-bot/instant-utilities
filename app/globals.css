@@ -211,7 +211,56 @@ input:focus, textarea:focus, select:focus {
 .sos-btn:hover { transform: scale(1.03); box-shadow: 0 0 0 8px #fee2e2; }
 .sos-btn:active { transform: scale(0.97); }
 
+/* Spinner */
+.spinner {
+  width: 28px; height: 28px;
+  border: 2px solid var(--border);
+  border-top-color: var(--fg);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg) } }
+
+/* Skeleton */
+.skeleton {
+  background: linear-gradient(90deg, #f0f0f0 25%, #e0e0e0 50%, #f0f0f0 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.2s infinite;
+  border-radius: 4px;
+}
+@keyframes shimmer { to { background-position: -200% 0 } }
+
+/* Mobile sidebar overlay */
+.sidebar-overlay {
+  display: none;
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.4);
+  z-index: 150;
+}
+.sidebar-mobile {
+  position: fixed; top: 0; left: 0; bottom: 0;
+  width: 260px;
+  background: var(--bg);
+  border-right: 1px solid var(--border);
+  z-index: 160;
+  padding: 1.5rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  overflow-y: auto;
+}
+.sidebar-mobile-close {
+  position: absolute; top: 1rem; right: 1rem;
+  background: none; border: none;
+  font-size: 1.25rem; cursor: pointer;
+  color: var(--muted);
+}
+
 @media (max-width: 768px) {
   .sidebar { display: none; }
   .stats-grid { grid-template-columns: 1fr 1fr; }
+  #hamburger-btn { display: flex !important; align-items: center; justify-content: center; background: none; border: none; font-size: 1.25rem; color: var(--fg); }
+  .nav-email { display: none !important; }
+  .main-content { padding: 1.25rem; }
+  .sos-btn { width: 100% !important; max-width: 100% !important; border-radius: 12px !important; height: 80px !important; }
 }
