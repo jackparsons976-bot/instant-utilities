@@ -17,6 +17,5 @@ export default withSentryConfig(nextConfig, {
   silent: true,
   disableLogger: true,
   widenClientFileUpload: true,
-  hideSourceMaps: true,
   automaticVercelMonitors: false,
 })
