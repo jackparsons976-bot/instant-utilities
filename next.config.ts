@@ -6,9 +6,6 @@ const nextConfig: NextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  eslint: {
-    ignoreDuringBuilds: true,
-  },
 }
 
 export default withSentryConfig(nextConfig, {
@@ -18,6 +15,4 @@ export default withSentryConfig(nextConfig, {
   widenClientFileUpload: true,
   tunnelRoute: '/monitoring',
   silent: !process.env.CI,
-  disableLogger: true,
-  automaticVercelMonitors: false,
 })

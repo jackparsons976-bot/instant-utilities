@@ -14,7 +14,7 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
   }
 }
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl
   const token = request.cookies.get('sb-access-token')?.value ?? null
 
@@ -49,6 +49,6 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
-  // Exclude the Sentry tunnel route, Next.js internals, and static files
+  // /monitoring is the Sentry tunnel route — excluded by not matching it here
   matcher: ['/dashboard/:path*', '/admin/:path*', '/admin'],
 }

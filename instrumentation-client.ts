@@ -10,3 +10,6 @@ Sentry.init({
   ],
   debug: false,
 })
+
+// Required by Next.js 16 for navigation instrumentation
+export const onRouterTransitionStart = Sentry.captureRouterTransitionStart
