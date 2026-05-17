@@ -45,11 +45,13 @@ export default function EmergencyPage() {
   const [loading, setLoading] = useState(true)
   const [sosActive, setSosActive] = useState(false)
   const [realtimeConnected, setRealtimeConnected] = useState(false)
+  const [reconnectKey, setReconnectKey] = useState(0)
   const [showHazardForm, setShowHazardForm] = useState(false)
   const [hazardType, setHazardType] = useState('fire')
   const [hazardFloor, setHazardFloor] = useState('')
   const [hazardNotes, setHazardNotes] = useState('')
   const channelRef = useRef<any>(null)
+  const reconnectAttempts = useRef(0)
 
   const facilityId = session?.user?.app_metadata?.active_facility_ids?.[0]
   const role = (session?.user?.app_metadata?.platform_role as string) ?? 'resident'
@@ -143,12 +145,20 @@ export default function EmergencyPage() {
         setTimeline(prev => [...prev, payload.new as TimelineEntry])
       })
       .subscribe(status => {
-        setRealtimeConnected(status === 'SUBSCRIBED')
+        if (status === 'SUBSCRIBED') {
+          setRealtimeConnected(true)
+          reconnectAttempts.current = 0
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+          setRealtimeConnected(false)
+          const delay = Math.min(1000 * 2 ** reconnectAttempts.current, 30000)
+          reconnectAttempts.current += 1
+          setTimeout(() => setReconnectKey(k => k + 1), delay)
+        }
       })
 
     channelRef.current = channel
     return () => { sb.removeChannel(channel) }
-  }, [facilityId])
+  }, [facilityId, reconnectKey])
 
   async function triggerSOS() {
     if (!session || !facilityId) return
@@ -223,7 +233,7 @@ export default function EmergencyPage() {
             background: realtimeConnected ? 'var(--success)' : '#d1d5db',
             display: 'inline-block',
           }} />
-          {realtimeConnected ? 'Live' : 'Connecting…'}
+          {realtimeConnected ? 'Live' : reconnectAttempts.current > 0 ? 'Reconnecting…' : 'Connecting…'}
         </span>
       </div>
 

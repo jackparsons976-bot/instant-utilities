@@ -35,8 +35,11 @@ export default function MessagesPage() {
   const [msgLoading, setMsgLoading] = useState(false)
   const [body, setBody] = useState('')
   const [sending, setSending] = useState(false)
+  const [realtimeConnected, setRealtimeConnected] = useState(false)
+  const [reconnectKey, setReconnectKey] = useState(0)
   const bottomRef = useRef<HTMLDivElement>(null)
   const channelRef = useRef<any>(null)
+  const reconnectAttempts = useRef(0)
 
   const facilityId = session?.user?.app_metadata?.active_facility_ids?.[0]
 
@@ -86,11 +89,21 @@ export default function MessagesPage() {
       }, payload => {
         setMessages(prev => [...prev, payload.new as Message])
       })
-      .subscribe()
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED') {
+          setRealtimeConnected(true)
+          reconnectAttempts.current = 0
+        } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
+          setRealtimeConnected(false)
+          const delay = Math.min(1000 * 2 ** reconnectAttempts.current, 30000)
+          reconnectAttempts.current += 1
+          setTimeout(() => setReconnectKey(k => k + 1), delay)
+        }
+      })
     channelRef.current = channel
 
     return () => { if (channelRef.current) sb.removeChannel(channelRef.current) }
-  }, [activeThread?.id, session?.user?.id])
+  }, [activeThread?.id, session?.user?.id, reconnectKey])
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -114,9 +127,24 @@ export default function MessagesPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-      <div>
-        <h1 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.25rem' }}>Messages</h1>
-        <p style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>Direct messages and threads</p>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '0.5rem' }}>
+        <div>
+          <h1 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.25rem' }}>Messages</h1>
+          <p style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>Direct messages and threads</p>
+        </div>
+        {activeThread && (
+          <span style={{
+            display: 'flex', alignItems: 'center', gap: '0.4rem',
+            fontSize: '0.75rem', color: realtimeConnected ? 'var(--success)' : 'var(--muted)',
+          }}>
+            <span style={{
+              width: '8px', height: '8px', borderRadius: '50%',
+              background: realtimeConnected ? 'var(--success)' : '#d1d5db',
+              display: 'inline-block',
+            }} />
+            {realtimeConnected ? 'Live' : reconnectAttempts.current > 0 ? 'Reconnecting…' : 'Connecting…'}
+          </span>
+        )}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: activeThread ? '280px 1fr' : '1fr', gap: '1rem', minHeight: '480px' }}>
