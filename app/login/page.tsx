@@ -25,7 +25,7 @@ export default function LoginPage() {
     const sb = getSupabaseClient()
     const { error } = await sb.auth.signInWithPassword({ email, password })
     if (error) { setError(error.message); setBusy(false); return }
-    router.push('/dashboard')
+    // Navigation handled by the useEffect above once session state commits
   }
 
   if (loading) return <div className="center"><p style={{ color: 'var(--muted)' }}>Loading…</p></div>

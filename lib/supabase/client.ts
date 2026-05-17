@@ -13,7 +13,7 @@ export function getSupabaseClient() {
         storageKey: 'sb-auth-token',
         storage: typeof window !== 'undefined' ? window.localStorage : undefined,
         autoRefreshToken: true,
-        detectSessionInUrl: true,
+        detectSessionInUrl: false,
       }
     }
   )
