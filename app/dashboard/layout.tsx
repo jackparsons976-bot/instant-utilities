@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import Link from 'next/link'
 import { useAuth } from '@/providers/AuthProvider'
 import { AppNav } from '@/components/AppNav'
 import { Sidebar } from '@/components/Sidebar'
@@ -37,6 +38,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
           <ErrorBoundary>
             {children}
           </ErrorBoundary>
+          <footer style={{ marginTop: '3rem', paddingTop: '1rem', borderTop: '1px solid var(--border)', display: 'flex', gap: '1.25rem', fontSize: '0.75rem', color: 'var(--muted)' }}>
+            <Link href="/privacy" style={{ color: 'var(--muted)' }}>Privacy Policy</Link>
+            <Link href="/terms" style={{ color: 'var(--muted)' }}>Terms of Service</Link>
+          </footer>
         </main>
       </div>
 

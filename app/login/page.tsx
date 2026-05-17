@@ -65,6 +65,11 @@ export default function LoginPage() {
         <p style={{ marginTop: '1.5rem', textAlign: 'center', fontSize: '0.8rem', color: 'var(--muted)' }}>
           Demo: admin@harbourview.dev / SeedPassword123!
         </p>
+
+        <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'center', gap: '1.25rem', fontSize: '0.75rem' }}>
+          <Link href="/privacy" style={{ color: 'var(--muted)' }}>Privacy Policy</Link>
+          <Link href="/terms" style={{ color: 'var(--muted)' }}>Terms of Service</Link>
+        </div>
       </div>
     </div>
   )

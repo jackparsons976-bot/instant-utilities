@@ -71,7 +71,13 @@ export default function HomePage() {
 
       {/* Footer */}
       <footer style={{ padding: '1.5rem', borderTop: '1px solid var(--border)', textAlign: 'center', fontSize: '0.8rem', color: 'var(--muted)' }}>
-        © {new Date().getFullYear()} Instant Utilities. All rights reserved.
+        <div style={{ marginBottom: '0.4rem' }}>
+          © {new Date().getFullYear()} Instant Utilities. All rights reserved.
+        </div>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '1.25rem' }}>
+          <Link href="/privacy" style={{ color: 'var(--muted)' }}>Privacy Policy</Link>
+          <Link href="/terms" style={{ color: 'var(--muted)' }}>Terms of Service</Link>
+        </div>
       </footer>
     </div>
   )
