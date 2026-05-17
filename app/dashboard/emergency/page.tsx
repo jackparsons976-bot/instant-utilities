@@ -23,6 +23,10 @@ interface ActiveRoute {
   is_blocked: boolean; block_reason: string | null
 }
 
+function nodeLabel(nodeMap: Record<string, string>, id: string): string {
+  return nodeMap[id] ?? `${id.slice(0, 8)}…`
+}
+
 function elapsed(dateStr: string) {
   const diff = Math.floor((Date.now() - new Date(dateStr).getTime()) / 1000)
   if (diff < 60) return `${diff}s ago`
@@ -37,6 +41,7 @@ export default function EmergencyPage() {
   const [timeline, setTimeline] = useState<TimelineEntry[]>([])
   const [hazards, setHazards] = useState<HazardMarker[]>([])
   const [routes, setRoutes] = useState<ActiveRoute[]>([])
+  const [nodeMap, setNodeMap] = useState<Record<string, string>>({})
   const [loading, setLoading] = useState(true)
   const [sosActive, setSosActive] = useState(false)
   const [realtimeConnected, setRealtimeConnected] = useState(false)
@@ -70,11 +75,17 @@ export default function EmergencyPage() {
       sb.schema('emergency').from('active_routes')
         .select('id, from_node_id, to_node_id, is_blocked, block_reason')
         .eq('facility_id', facilityId),
-    ]).then(([{ data: iData }, { data: hData }, { data: rData }]) => {
+      (sb as any).schema('qr').from('nodes')
+        .select('id, label')
+        .eq('facility_id', facilityId),
+    ]).then(([{ data: iData }, { data: hData }, { data: rData }, { data: nData }]) => {
       const incidentList = (iData ?? []) as Incident[]
       setIncidents(incidentList)
       setHazards((hData ?? []) as HazardMarker[])
       setRoutes((rData ?? []) as ActiveRoute[])
+      const map: Record<string, string> = {}
+      ;(nData ?? []).forEach((n: { id: string; label: string }) => { map[n.id] = n.label })
+      setNodeMap(map)
 
       const activeId = incidentList.find(i => i.status === 'active')?.id
       if (activeId) {
@@ -368,8 +379,8 @@ export default function EmergencyPage() {
               <tbody>
                 {routes.map(r => (
                   <tr key={r.id}>
-                    <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{r.from_node_id.slice(0, 8)}…</td>
-                    <td style={{ fontFamily: 'monospace', fontSize: '0.8rem' }}>{r.to_node_id.slice(0, 8)}…</td>
+                    <td style={{ fontSize: '0.85rem' }}>{nodeLabel(nodeMap, r.from_node_id)}</td>
+                    <td style={{ fontSize: '0.85rem' }}>{nodeLabel(nodeMap, r.to_node_id)}</td>
                     <td>
                       <span className={`badge ${r.is_blocked ? 'badge-red' : 'badge-green'}`}>
                         {r.is_blocked ? 'Blocked' : 'Clear'}
