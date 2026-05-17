@@ -35,3 +35,15 @@ The easiest way to deploy your Next.js app is to use the [Vercel Platform](https
 
 Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
 # instant-utilities
+
+## Setup
+
+Copy `.env.local.example` (or duplicate `.env.local`) and fill in the required values:
+
+| Variable | Description |
+|---|---|
+| `NEXT_PUBLIC_SUPABASE_URL` | Supabase project URL |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase anon/public key |
+| `NEXT_PUBLIC_SENTRY_DSN` | Sentry DSN — create a project at sentry.io, copy the DSN from Project Settings → Client Keys |
+
+If `NEXT_PUBLIC_SENTRY_DSN` is empty, Sentry initialises but no events are sent.
