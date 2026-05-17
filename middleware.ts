@@ -49,5 +49,6 @@ export function middleware(request: NextRequest) {
 }
 
 export const config = {
+  // Exclude the Sentry tunnel route, Next.js internals, and static files
   matcher: ['/dashboard/:path*', '/admin/:path*', '/admin'],
 }

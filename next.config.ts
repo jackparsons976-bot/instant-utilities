@@ -14,8 +14,10 @@ const nextConfig: NextConfig = {
 export default withSentryConfig(nextConfig, {
   org: 'instant-utilities',
   project: 'instant-utilities',
-  silent: true,
-  disableLogger: true,
+  authToken: process.env.SENTRY_AUTH_TOKEN,
   widenClientFileUpload: true,
+  tunnelRoute: '/monitoring',
+  silent: !process.env.CI,
+  disableLogger: true,
   automaticVercelMonitors: false,
 })
