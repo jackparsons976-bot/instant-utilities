@@ -3,12 +3,11 @@
 import { useAuth } from '@/providers/AuthProvider'
 
 export default function DashboardPage() {
-  const { session } = useAuth()
-  const user = session?.user
-  const role = (user?.app_metadata?.platform_role as string) ?? 'resident'
-  const email = user?.email ?? ''
-  const facilityIds: string[] = user?.app_metadata?.active_facility_ids ?? []
-  const caps: string[] = user?.app_metadata?.caps ?? []
+  const { session, jwtClaims } = useAuth()
+  const role: string = jwtClaims?.app_metadata?.platform_role ?? jwtClaims?.platform_role ?? 'resident'
+  const email = session?.user?.email ?? ''
+  const facilityIds: string[] = jwtClaims?.app_metadata?.active_facility_ids ?? jwtClaims?.active_facility_ids ?? []
+  const caps: string[] = jwtClaims?.app_metadata?.caps ?? jwtClaims?.caps ?? []
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
