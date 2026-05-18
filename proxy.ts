@@ -38,7 +38,8 @@ export function proxy(request: NextRequest) {
       return NextResponse.redirect(loginUrl)
     }
     const appMeta = payload?.app_metadata as Record<string, unknown> | undefined
-    if (appMeta?.platform_role !== 'platform_admin') {
+    const platformRole = (appMeta?.platform_role ?? payload?.platform_role) as string | undefined
+    if (platformRole !== 'platform_admin') {
       const dashboardUrl = request.nextUrl.clone()
       dashboardUrl.pathname = '/dashboard'
       return NextResponse.redirect(dashboardUrl)
