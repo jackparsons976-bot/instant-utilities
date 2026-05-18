@@ -38,7 +38,7 @@ export function getSupabaseClient() {
         storageKey: 'sb-auth-token',
         storage: typeof window !== 'undefined' ? cookieBridgeStorage : undefined,
         autoRefreshToken: true,
-        detectSessionInUrl: false,
+        detectSessionInUrl: true,
       }
     }
   )

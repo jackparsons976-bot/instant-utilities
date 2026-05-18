@@ -26,14 +26,25 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const supabase = getSupabaseClient()
 
-    supabase.auth.getSession().then(({ data }: { data: { session: Session | null } }) => {
-      setSession(data.session)
+    supabase.auth.getSession().then(async ({ data }) => {
+      if (data.session) {
+        // Force a fresh JWT so hook claims are always current
+        const { data: refreshed } = await supabase.auth.refreshSession()
+        setSession(refreshed.session)
+      } else {
+        setSession(null)
+      }
       setLoading(false)
     })
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      (_event: AuthChangeEvent, session: Session | null) => {
-        setSession(session)
+      async (_event: AuthChangeEvent, session: Session | null) => {
+        if (_event === 'SIGNED_IN' && session) {
+          const { data: refreshed } = await supabase.auth.refreshSession()
+          setSession(refreshed.session ?? session)
+        } else {
+          setSession(session)
+        }
         setLoading(false)
       }
     )
