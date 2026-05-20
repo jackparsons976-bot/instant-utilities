@@ -1,0 +1,272 @@
+'use client'
+
+import { useState, useEffect, useRef } from 'react'
+import { useAuth } from '@/providers/AuthProvider'
+import { useToast } from '@/components/Toast'
+import { useRouter } from 'next/navigation'
+import { getSupabaseClient } from '@/lib/supabase/client'
+import { AppNav } from '@/components/AppNav'
+
+interface Facility { id: string; name: string }
+interface Floor {
+  id: string; facility_id: string; level: number; name: string
+  image_url: string | null; floor_plan_url: string | null
+  geo_lat_min: number | null; geo_lat_max: number | null
+  geo_lng_min: number | null; geo_lng_max: number | null
+  building_name: string | null; level_label: string | null
+}
+
+export default function FloorPlanAdminPage() {
+  const { session, loading: authLoading } = useAuth()
+  const { toast } = useToast()
+  const router = useRouter()
+
+  const [facilities, setFacilities] = useState<Facility[]>([])
+  const [selectedFacilityId, setSelectedFacilityId] = useState('')
+  const [floors, setFloors] = useState<Floor[]>([])
+  const [selectedFloorId, setSelectedFloorId] = useState('')
+  const [uploading, setUploading] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  const [geoBounds, setGeoBounds] = useState({
+    lat_min: '', lat_max: '', lng_min: '', lng_max: '',
+    building_name: '', level_label: '',
+  })
+
+  const role = session?.user?.app_metadata?.platform_role as string
+
+  useEffect(() => {
+    if (!authLoading && (!session || role !== 'platform_admin')) {
+      router.replace('/dashboard')
+    }
+  }, [session, authLoading, role, router])
+
+  // Load facilities
+  useEffect(() => {
+    if (!session || role !== 'platform_admin') return
+    getSupabaseClient().schema('facility').from('facilities')
+      .select('id, name').order('name')
+      .then(({ data }) => {
+        const list = (data ?? []) as Facility[]
+        setFacilities(list)
+        if (list.length > 0) setSelectedFacilityId(list[0].id)
+        setLoading(false)
+      })
+  }, [session?.user?.id, role])
+
+  // Load floors when facility changes
+  useEffect(() => {
+    if (!selectedFacilityId) { setFloors([]); setSelectedFloorId(''); return }
+    getSupabaseClient().schema('facility').from('floors')
+      .select('id,facility_id,level,name,image_url,floor_plan_url,geo_lat_min,geo_lat_max,geo_lng_min,geo_lng_max,building_name,level_label')
+      .eq('facility_id', selectedFacilityId)
+      .order('level')
+      .then(({ data }) => {
+        const list = (data ?? []) as Floor[]
+        setFloors(list)
+        if (list.length > 0) setSelectedFloorId(list[0].id)
+      })
+  }, [selectedFacilityId])
+
+  // Pre-fill bounds when floor changes
+  useEffect(() => {
+    const floor = floors.find(f => f.id === selectedFloorId)
+    if (!floor) return
+    setGeoBounds({
+      lat_min: floor.geo_lat_min?.toString() ?? '',
+      lat_max: floor.geo_lat_max?.toString() ?? '',
+      lng_min: floor.geo_lng_min?.toString() ?? '',
+      lng_max: floor.geo_lng_max?.toString() ?? '',
+      building_name: floor.building_name ?? '',
+      level_label: floor.level_label ?? '',
+    })
+  }, [selectedFloorId, floors])
+
+  async function uploadFloorPlan() {
+    if (!fileRef.current?.files?.[0] || !selectedFloorId || !selectedFacilityId) {
+      toast('Select a facility, floor, and image file.', 'error'); return
+    }
+    const file = fileRef.current.files[0]
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
+    if (!['png', 'jpg', 'jpeg', 'svg', 'webp'].includes(ext)) {
+      toast('Only PNG, JPG, SVG or WebP files are supported.', 'error'); return
+    }
+
+    setUploading(true)
+    const sb = getSupabaseClient()
+    const path = `${selectedFacilityId}/${selectedFloorId}/plan.${ext}`
+
+    const { error: uploadErr } = await sb.storage
+      .from('floor-plans')
+      .upload(path, file, { upsert: true, contentType: file.type })
+
+    if (uploadErr) {
+      toast('Upload failed: ' + uploadErr.message, 'error')
+      setUploading(false); return
+    }
+
+    const { data: { publicUrl } } = sb.storage.from('floor-plans').getPublicUrl(path)
+
+    const { error: updateErr } = await sb.schema('facility').from('floors')
+      .update({ image_url: publicUrl })
+      .eq('id', selectedFloorId)
+
+    if (updateErr) {
+      toast('DB update failed: ' + updateErr.message, 'error')
+    } else {
+      toast('Floor plan uploaded successfully.', 'success')
+      setFloors(prev => prev.map(f => f.id === selectedFloorId ? { ...f, image_url: publicUrl } : f))
+      if (fileRef.current) fileRef.current.value = ''
+    }
+    setUploading(false)
+  }
+
+  async function saveGeoBounds() {
+    if (!selectedFloorId) return
+    const parsed = {
+      geo_lat_min: parseFloat(geoBounds.lat_min) || null,
+      geo_lat_max: parseFloat(geoBounds.lat_max) || null,
+      geo_lng_min: parseFloat(geoBounds.lng_min) || null,
+      geo_lng_max: parseFloat(geoBounds.lng_max) || null,
+      building_name: geoBounds.building_name || null,
+      level_label: geoBounds.level_label || null,
+    }
+    setSaving(true)
+    const { error } = await getSupabaseClient().schema('facility').from('floors')
+      .update(parsed).eq('id', selectedFloorId)
+    if (error) toast('Save failed: ' + error.message, 'error')
+    else {
+      toast('Geo bounds saved.', 'success')
+      setFloors(prev => prev.map(f => f.id === selectedFloorId ? { ...f, ...parsed } : f))
+    }
+    setSaving(false)
+  }
+
+  if (authLoading || loading) return <div className="center"><div className="spinner" /></div>
+  if (role !== 'platform_admin') return null
+
+  const activeFloor = floors.find(f => f.id === selectedFloorId)
+  const currentImageUrl = activeFloor?.image_url ?? activeFloor?.floor_plan_url ?? null
+
+  return (
+    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+      <AppNav />
+      <div style={{ padding: '2rem', maxWidth: '820px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+        <div>
+          <div style={{ marginBottom: '0.5rem' }}>
+            <a href="/admin" style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>← Admin</a>
+          </div>
+          <h1 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.25rem' }}>Floor Plan Manager</h1>
+          <p style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>Upload floor plan images and configure GPS geo-bounds per floor.</p>
+        </div>
+
+        {/* Selectors */}
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Select building & floor</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div>
+              <label style={{ fontSize: '0.8rem', color: 'var(--muted)', display: 'block', marginBottom: '0.4rem' }}>Building</label>
+              <select
+                className="btn btn-outline"
+                value={selectedFacilityId}
+                onChange={e => setSelectedFacilityId(e.target.value)}
+                style={{ width: '100%', textAlign: 'left' }}
+              >
+                {facilities.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
+              </select>
+            </div>
+            <div>
+              <label style={{ fontSize: '0.8rem', color: 'var(--muted)', display: 'block', marginBottom: '0.4rem' }}>Floor</label>
+              <select
+                className="btn btn-outline"
+                value={selectedFloorId}
+                onChange={e => setSelectedFloorId(e.target.value)}
+                style={{ width: '100%', textAlign: 'left' }}
+                disabled={floors.length === 0}
+              >
+                {floors.map(f => <option key={f.id} value={f.id}>{f.level_label ?? f.name} (Level {f.level})</option>)}
+              </select>
+            </div>
+          </div>
+        </div>
+
+        {/* Floor plan upload */}
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Floor plan image</div>
+          {currentImageUrl && (
+            <div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '0.5rem' }}>Current image</div>
+              <img src={currentImageUrl} alt="Current floor plan" style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'contain', border: '1px solid var(--border)', borderRadius: '6px' }} />
+            </div>
+          )}
+          <div>
+            <label style={{ fontSize: '0.8rem', color: 'var(--muted)', display: 'block', marginBottom: '0.4rem' }}>
+              Upload new image (PNG, JPG, SVG — no PDF)
+            </label>
+            <input ref={fileRef} type="file" accept=".png,.jpg,.jpeg,.svg,.webp,image/*" style={{ fontSize: '0.875rem', marginBottom: '0.75rem', display: 'block' }} />
+            <button className="btn btn-primary" onClick={uploadFloorPlan} disabled={uploading || !selectedFloorId}>
+              {uploading ? 'Uploading…' : 'Upload floor plan'}
+            </button>
+          </div>
+        </div>
+
+        {/* Geo bounds */}
+        <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem' }}>GPS geo-bounds</div>
+            <p style={{ fontSize: '0.8rem', color: 'var(--muted)', lineHeight: 1.6 }}>
+              Enter the GPS coordinates of the four corners of this floor. Use{' '}
+              <strong>Google Maps</strong> to find them — right-click any point and copy the coordinates.
+              These bounds must match the physical building location for GPS-to-image mapping to be accurate.
+            </p>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            {[
+              { key: 'lat_min', label: 'Latitude min (south edge)' },
+              { key: 'lat_max', label: 'Latitude max (north edge)' },
+              { key: 'lng_min', label: 'Longitude min (west edge)' },
+              { key: 'lng_max', label: 'Longitude max (east edge)' },
+            ].map(({ key, label }) => (
+              <div key={key}>
+                <label style={{ fontSize: '0.8rem', color: 'var(--muted)', display: 'block', marginBottom: '0.3rem' }}>{label}</label>
+                <input
+                  type="number" step="0.0000001" placeholder="e.g. -33.8700"
+                  value={geoBounds[key as keyof typeof geoBounds]}
+                  onChange={e => setGeoBounds(prev => ({ ...prev, [key]: e.target.value }))}
+                  style={{ width: '100%', padding: '0.45rem 0.65rem', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: '0.875rem', background: '#fff', color: 'var(--fg)' }}
+                />
+              </div>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+            <div>
+              <label style={{ fontSize: '0.8rem', color: 'var(--muted)', display: 'block', marginBottom: '0.3rem' }}>Building name</label>
+              <input
+                type="text" placeholder="e.g. Harbourview"
+                value={geoBounds.building_name}
+                onChange={e => setGeoBounds(prev => ({ ...prev, building_name: e.target.value }))}
+                style={{ width: '100%', padding: '0.45rem 0.65rem', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: '0.875rem', background: '#fff', color: 'var(--fg)' }}
+              />
+            </div>
+            <div>
+              <label style={{ fontSize: '0.8rem', color: 'var(--muted)', display: 'block', marginBottom: '0.3rem' }}>Floor label</label>
+              <input
+                type="text" placeholder="e.g. Level 4"
+                value={geoBounds.level_label}
+                onChange={e => setGeoBounds(prev => ({ ...prev, level_label: e.target.value }))}
+                style={{ width: '100%', padding: '0.45rem 0.65rem', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: '0.875rem', background: '#fff', color: 'var(--fg)' }}
+              />
+            </div>
+          </div>
+          <div>
+            <button className="btn btn-primary" onClick={saveGeoBounds} disabled={saving || !selectedFloorId}>
+              {saving ? 'Saving…' : 'Save geo-bounds'}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}

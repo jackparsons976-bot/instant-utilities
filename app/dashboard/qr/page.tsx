@@ -4,11 +4,13 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/providers/AuthProvider'
 import { useToast } from '@/components/Toast'
 import { getSupabaseClient } from '@/lib/supabase/client'
+import { setLocationFromQR } from '@/lib/location/tracker'
 
 interface QRNode {
   id: string; label: string; node_type: string; zone: string | null
   emergency_priority: number; is_active: boolean
   qr_payload: string | null; coord_x: number | null; coord_y: number | null
+  floor_id: string | null; x_percent: number | null; y_percent: number | null
 }
 
 function priorityColor(p: number) {
@@ -98,14 +100,17 @@ export default function QRPage() {
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState<string | null>(null)
 
-  const facilityId = session?.user?.app_metadata?.active_facility_ids?.[0]
-  const role = (session?.user?.app_metadata?.platform_role as string) ?? 'resident'
+  const { jwtClaims } = useAuth()
+  const facilityIds: string[] = jwtClaims?.app_metadata?.active_facility_ids ?? jwtClaims?.active_facility_ids ?? []
+  const facilityId = facilityIds[0]
+  const role = (jwtClaims?.app_metadata?.platform_role ?? jwtClaims?.platform_role ?? 'resident') as string
   const isManager = role === 'facility_manager' || role === 'platform_admin'
+  const userId = session?.user?.id ?? ''
 
   useEffect(() => {
     if (!facilityId) { setLoading(false); return }
     getSupabaseClient().schema('qr').from('nodes')
-      .select('id, label, node_type, zone, emergency_priority, is_active, qr_payload, coord_x, coord_y')
+      .select('id, label, node_type, zone, emergency_priority, is_active, qr_payload, coord_x, coord_y, floor_id, x_percent, y_percent')
       .eq('facility_id', facilityId)
       .order('emergency_priority', { ascending: true })
       .then(({ data }) => { setNodes((data ?? []) as QRNode[]); setLoading(false) })
@@ -179,6 +184,20 @@ export default function QRPage() {
                             <div style={{ marginBottom: '0.5rem', fontWeight: 600, color: 'var(--fg)', fontFamily: 'inherit' }}>QR Payload</div>
                             {n.qr_payload}
                           </div>
+                          {facilityId && userId && (
+                            <div style={{ alignSelf: 'center' }}>
+                              <button
+                                className="btn btn-outline"
+                                style={{ fontSize: '0.8rem' }}
+                                onClick={async () => {
+                                  await setLocationFromQR(userId, facilityId, n)
+                                  toast(`Location updated — pinned to ${n.label}`, 'success')
+                                }}
+                              >
+                                📍 Pin my location here
+                              </button>
+                            </div>
+                          )}
                         </div>
                       </td>
                     </tr>

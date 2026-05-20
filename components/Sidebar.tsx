@@ -30,6 +30,7 @@ const ADMIN_NAV: NavItem[] = [
   { label: 'Marketplace',   href: '/dashboard/marketplace',  icon: '🛒' },
   { label: 'Messages',      href: '/dashboard/messages',     icon: '✉️' },
   { label: 'Admin',         href: '/admin',                  icon: '⚙️' },
+  { label: 'Floor Plans',   href: '/admin/floorplan',        icon: '🗺️' },
 ]
 
 const RESIDENT_NAV: NavItem[] = [
