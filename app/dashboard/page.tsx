@@ -5,6 +5,10 @@ import { useAuth } from '@/providers/AuthProvider'
 import { getSupabaseClient } from '@/lib/supabase/client'
 import { startLocationTracking, type Floor, type LiveLocation } from '@/lib/location/tracker'
 import { LocationPermission } from '@/components/LocationPermission'
+import { can } from '@/lib/permissions/can'
+import { calculateEvacuationRoute, buildDirectionText, type RouteNode, type HazardPosition } from '@/lib/emergency/routing'
+import { dispatchResponder, updateIncidentStatus, getAvailableResponders } from '@/lib/emergency/dispatch'
+import { cacheFloorPlan } from '@/lib/offline/cache'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -40,6 +44,13 @@ interface HazardMarker {
   coord_y: number | null
   hazard_type: string
   is_active: boolean
+  x_percent: number | null
+  y_percent: number | null
+  marker_type: string | null
+  confirmed_by: string[] | null
+  resolved_at: string | null
+  created_at: string | null
+  created_by: string | null
 }
 
 interface QRNode {
@@ -72,8 +83,30 @@ function hazardIcon(type: string) {
   const map: Record<string, string> = {
     fire: '🔥', flood: '💧', gas_leak: '☁️', structural: '⚠️',
     medical: '🏥', chemical: '☢️', electrical: '⚡',
+    smoke: '💨', blocked_exit: '🚫', threat: '🚨', other: '⚠️',
   }
   return map[type] ?? '⚠️'
+}
+
+function hazardColor(type: string | null): string {
+  const map: Record<string, string> = {
+    fire: '#dc2626',
+    smoke: '#ea580c',
+    blocked_exit: '#2563eb',
+    threat: '#7c3aed',
+    other: '#6b7280',
+  }
+  return map[type ?? ''] ?? '#6b7280'
+}
+
+function relativeTime(iso: string | null): string {
+  if (!iso) return ''
+  const diff = Date.now() - new Date(iso).getTime()
+  const mins = Math.floor(diff / 60000)
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
@@ -92,6 +125,11 @@ const PULSE_STYLE = `
     background: #16a34a;
     animation: loc-pulse 2s ease-out infinite;
     z-index: -1;
+  }
+  @keyframes sos-ring-pulse {
+    0%   { transform: scale(1); opacity: 0.9; }
+    70%  { transform: scale(1.7); opacity: 0; }
+    100% { transform: scale(1.7); opacity: 0; }
   }
   .floor-plan-root { margin: -2rem; display: flex; min-height: calc(100vh - 56px); }
   @media (max-width: 768px) { .floor-plan-root { margin: -1.25rem; flex-direction: column; } }
@@ -119,11 +157,46 @@ export default function DashboardPage() {
   const [sosEvents, setSosEvents] = useState<SOSEvent[]>([])
   const [hazards, setHazards] = useState<HazardMarker[]>([])
   const [exitNodes, setExitNodes] = useState<QRNode[]>([])
+  const [evacuationRoute, setEvacuationRoute] = useState<import('@/lib/emergency/routing').EvacuationRoute | null>(null)
   const [liveLocation, setLiveLocation] = useState<LiveLocation | null>(null)
   const [gpsCalibrated, setGpsCalibrated] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [placingMarker, setPlacingMarker] = useState(false)
+  const [pendingMarkerPos, setPendingMarkerPos] = useState<{ x: number; y: number } | null>(null)
+  const [selectedMarkerType, setSelectedMarkerType] = useState<string>('other')
+  const [submitting, setSubmitting] = useState(false)
+  const [now, setNow] = useState(() => Date.now())
+  const [responders, setResponders] = useState<{user_id: string, role: string, unit_number: string | null}[]>([])
+  const [selectedSOS, setSelectedSOS] = useState<string | null>(null)
+  const [dispatchError, setDispatchError] = useState<string | null>(null)
+  const [dispatching, setDispatching] = useState(false)
+  const [statusUpdating, setStatusUpdating] = useState<string | null>(null)
+  const [copyingBrief, setCopyingBrief] = useState(false)
+  const [briefCopied, setBriefCopied] = useState(false)
+  const [briefError, setBriefError] = useState<string | null>(null)
+  const [isOnline, setIsOnline] = useState(true)
+  const [cachedAt, setCachedAt] = useState<number | null>(null)
 
   const cleanupRef = useRef<(() => void) | null>(null)
+  const mapAreaRef = useRef<HTMLDivElement>(null)
+
+  // ── Auto-fade timer — re-render every 60s so isOld threshold triggers ──
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 60_000)
+    return () => clearInterval(id)
+  }, [])
+
+  // ── Online / offline tracking ──
+  useEffect(() => {
+    const update = () => setIsOnline(navigator.onLine)
+    window.addEventListener('online', update)
+    window.addEventListener('offline', update)
+    setIsOnline(navigator.onLine)
+    return () => {
+      window.removeEventListener('online', update)
+      window.removeEventListener('offline', update)
+    }
+  }, [])
 
   // ── Initial data load ──
   useEffect(() => {
@@ -145,11 +218,11 @@ export default function DashboardPage() {
         .select('id,user_id,status').eq('facility_id', facilityId)
         .in('status', ['pending', 'acknowledged']),
       sb.schema('emergency').from('hazard_markers')
-        .select('id,floor_id,coord_x,coord_y,hazard_type,is_active')
+        .select('id,floor_id,coord_x,coord_y,hazard_type,is_active,x_percent,y_percent,marker_type,confirmed_by,resolved_at,created_at,created_by')
         .eq('facility_id', facilityId).eq('is_active', true),
       sb.schema('qr').from('nodes')
         .select('id,floor_id,node_type,x_percent,y_percent,coord_x,coord_y,emergency_priority,label')
-        .eq('facility_id', facilityId).lte('emergency_priority', 2).eq('is_active', true),
+        .eq('facility_id', facilityId).eq('is_active', true),
     ]).then(([floorsRes, locsRes, membersRes, incidentsRes, sosRes, hazardsRes, exitRes]) => {
       const floorsData = (floorsRes.data ?? []) as Floor[]
       setFloors(floorsData)
@@ -163,6 +236,26 @@ export default function DashboardPage() {
       setHazards((hazardsRes.data ?? []) as HazardMarker[])
       setExitNodes((exitRes.data ?? []) as QRNode[])
       setLoading(false)
+      if (isManager && facilityId) {
+        getAvailableResponders(facilityId).then(({ data }) => setResponders(data ?? []))
+      }
+      // ── Cache floor plan data for offline fallback ──
+      if (facilityId) {
+        const now = Date.now()
+        floorsData.forEach(f => {
+          if (f.image_url || f.floor_plan_url) {
+            cacheFloorPlan({
+              floorId: f.id,
+              facilityId,
+              imageUrl: f.image_url ?? f.floor_plan_url ?? null,
+              nodes: exitRes.data ?? [],
+              hazardMarkers: hazardsRes.data ?? [],
+              cachedAt: now,
+            })
+          }
+        })
+        setCachedAt(now)
+      }
     })
   }, [facilityId])
 
@@ -275,24 +368,144 @@ export default function DashboardPage() {
 
   const hazardsOnFloor = hazards.filter(h => h.floor_id === activeFloorId)
 
-  // Nearest exit node for evacuation route
   const selfLoc = userLocations.find(l => l.user_id === userId)
-  const exitNodesOnFloor = exitNodes.filter(n => n.floor_id === activeFloorId)
-  let nearestExit: QRNode | null = null
-  if (activeIncident && selfLoc?.x_percent != null && selfLoc?.y_percent != null) {
-    let minDist = Infinity
-    for (const n of exitNodesOnFloor) {
-      const nx = n.x_percent ?? (n.coord_x && activeFloor?.floor_plan_width ? (n.coord_x / activeFloor.floor_plan_width) * 100 : null)
-      const ny = n.y_percent ?? (n.coord_y && activeFloor?.floor_plan_height ? (n.coord_y / activeFloor.floor_plan_height) * 100 : null)
-      if (nx == null || ny == null) continue
-      const dx = nx - selfLoc.x_percent!
-      const dy = ny - selfLoc.y_percent!
-      const d = Math.sqrt(dx * dx + dy * dy)
-      if (d < minDist) { minDist = d; nearestExit = n }
+
+  const peopleOnFloor = usersOnFloor.length
+
+  // ── Evacuation route calculation ──
+  const recalculateRoute = useCallback(() => {
+    if (!activeIncident || !selfLoc?.x_percent || !selfLoc?.y_percent || !activeFloorId) {
+      setEvacuationRoute(null)
+      return
+    }
+    const userPosition = { x_percent: selfLoc.x_percent, y_percent: selfLoc.y_percent }
+    const nodesOnFloor: RouteNode[] = exitNodes
+      .filter(n => n.floor_id === activeFloorId && n.x_percent != null && n.y_percent != null)
+      .map(n => ({ id: n.id, label: n.label, node_type: n.node_type, x_percent: n.x_percent!, y_percent: n.y_percent! }))
+    const hazardPositions: HazardPosition[] = hazards
+      .filter(h => h.floor_id === activeFloorId && h.x_percent != null && h.y_percent != null)
+      .map(h => ({ id: h.id, x_percent: h.x_percent!, y_percent: h.y_percent! }))
+    setEvacuationRoute(calculateEvacuationRoute(userPosition, nodesOnFloor, hazardPositions))
+  }, [activeIncident, selfLoc, activeFloorId, exitNodes, hazards, setEvacuationRoute])
+
+  useEffect(() => { recalculateRoute() }, [recalculateRoute])
+
+  function handleMapClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (!placingMarker) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = Math.round(((e.clientX - rect.left) / rect.width) * 100 * 10) / 10
+    const y = Math.round(((e.clientY - rect.top) / rect.height) * 100 * 10) / 10
+    setPendingMarkerPos({ x, y })
+    setPlacingMarker(false)
+  }
+
+  const VALID_MARKER_TYPES = ['fire', 'smoke', 'blocked_exit', 'threat', 'other'] as const
+
+  async function submitHazardMarker() {
+    if (!pendingMarkerPos || !facilityId || !activeFloorId || !userId) return
+    if (!VALID_MARKER_TYPES.includes(selectedMarkerType as any)) return
+    if (submitting) return
+    setSubmitting(true)
+    const sb = getSupabaseClient()
+    try {
+      await sb.schema('emergency').from('hazard_markers').insert({
+        facility_id: facilityId,
+        floor_id: activeFloorId,
+        marker_type: selectedMarkerType,
+        hazard_type: selectedMarkerType,
+        x_percent: pendingMarkerPos.x,
+        y_percent: pendingMarkerPos.y,
+        created_by: userId,
+        placed_by: userId,
+        user_id: userId,
+        is_active: true,
+      })
+      setPendingMarkerPos(null)
+      setSelectedMarkerType('other')
+    } finally {
+      setSubmitting(false)
     }
   }
 
-  const peopleOnFloor = usersOnFloor.length
+  async function dismissHazard(hazardId: string) {
+    const sb = getSupabaseClient()
+    try {
+      await sb.schema('emergency').from('hazard_markers')
+        .update({ is_active: false, resolved_at: new Date().toISOString() })
+        .eq('id', hazardId)
+    } catch (err) {
+      console.error('Failed to dismiss hazard:', err)
+    }
+  }
+
+  async function handleDispatch(responderId: string) {
+    if (!selectedSOS || !facilityId) return
+    if (!activeIncident) return
+    const incident = activeIncident
+    setDispatching(true)
+    setDispatchError(null)
+    const { error } = await dispatchResponder(incident.id, responderId, facilityId)
+    setDispatching(false)
+    if (error) { setDispatchError(error as string); return }
+    setSelectedSOS(null)
+  }
+
+  async function handleCopyBrief() {
+    if (!activeIncident || !facilityId) return
+    setCopyingBrief(true)
+    setBriefError(null)
+    setBriefCopied(false)
+    try {
+      const sb = getSupabaseClient()
+      const { data, error } = await (sb as any).functions.invoke('notify-emergency', {
+        body: { incidentId: activeIncident.id, facilityId },
+      })
+      if (error) throw error
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(data.brief)
+      } else {
+        const el = document.createElement('textarea')
+        el.value = data.brief
+        document.body.appendChild(el)
+        el.select()
+        document.execCommand('copy')
+        document.body.removeChild(el)
+      }
+      setBriefCopied(true)
+      setTimeout(() => setBriefCopied(false), 3000)
+    } catch (err: any) {
+      setBriefError(err?.message ?? 'Failed to generate brief')
+    } finally {
+      setCopyingBrief(false)
+    }
+  }
+
+  async function handleStatusChange(incidentId: string, status: 'investigating' | 'contained' | 'resolved') {
+    setStatusUpdating(incidentId)
+    try {
+      await updateIncidentStatus(incidentId, status)
+    } catch (err) {
+      console.error('Failed to update incident status:', err)
+    } finally {
+      setStatusUpdating(null)
+    }
+  }
+
+  async function confirmHazard(hazardId: string) {
+    if (!userId) return
+    const sb = getSupabaseClient()
+    try {
+      const { data: current } = await (sb as any).schema('emergency').from('hazard_markers')
+        .select('confirmed_by').eq('id', hazardId).single()
+      const existing: string[] = current?.confirmed_by ?? []
+      if (existing.includes(userId)) return // already confirmed
+      await (sb as any).schema('emergency').from('hazard_markers')
+        .update({ confirmed_by: [...existing, userId] })
+        .eq('id', hazardId)
+    } catch (err) {
+      console.error('Failed to confirm hazard:', err)
+    }
+  }
 
   // ── No facility state ──
   if (!loading && !facilityId) {
@@ -347,8 +560,24 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {/* Offline banner */}
+          {!isOnline && (
+            <div style={{
+              background: '#fef3c7', borderBottom: '1px solid #f59e0b',
+              padding: '0.4rem 1rem', fontSize: '0.8rem', color: '#92400e',
+              display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0,
+            }}>
+              ⚠️ Offline — showing last known floor plan
+              {cachedAt && ` (cached ${Math.round((Date.now() - cachedAt) / 60000)}m ago)`}
+            </div>
+          )}
+
           {/* Map area */}
-          <div style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#f3f4f6' }}>
+          <div
+            ref={mapAreaRef}
+            onClick={handleMapClick}
+            style={{ flex: 1, position: 'relative', overflow: 'hidden', background: '#f3f4f6', cursor: placingMarker ? 'crosshair' : undefined }}
+          >
 
             {/* Floor plan image or grid placeholder */}
             {floorImageUrl ? (
@@ -384,16 +613,20 @@ export default function DashboardPage() {
               viewBox="0 0 100 100"
               preserveAspectRatio="none"
             >
-              {/* Evacuation route — dashed green line to nearest exit */}
-              {activeIncident && nearestExit && selfLoc?.x_percent != null && selfLoc?.y_percent != null && (() => {
-                const ex = nearestExit.x_percent ?? (nearestExit.coord_x && activeFloor?.floor_plan_width ? (nearestExit.coord_x / activeFloor.floor_plan_width) * 100 : null)
-                const ey = nearestExit.y_percent ?? (nearestExit.coord_y && activeFloor?.floor_plan_height ? (nearestExit.coord_y / activeFloor.floor_plan_height) * 100 : null)
-                if (ex == null || ey == null) return null
+              {/* Evacuation route — dashed polyline via calculated waypoints */}
+              {activeIncident && evacuationRoute && selfLoc?.x_percent != null && selfLoc?.y_percent != null && (() => {
+                const points = [
+                  { x: selfLoc.x_percent!, y: selfLoc.y_percent! },
+                  ...evacuationRoute.waypoints.map(w => ({ x: w.x_percent, y: w.y_percent }))
+                ]
+                const pointsStr = points.map(p => `${p.x},${p.y}`).join(' ')
                 return (
-                  <line
-                    x1={selfLoc.x_percent} y1={selfLoc.y_percent}
-                    x2={ex} y2={ey}
-                    stroke="#16a34a" strokeWidth="0.8" strokeDasharray="3 2"
+                  <polyline
+                    points={pointsStr}
+                    fill="none"
+                    stroke={evacuationRoute.blocked ? '#f59e0b' : '#16a34a'}
+                    strokeWidth="0.8"
+                    strokeDasharray="3 2"
                     strokeLinecap="round"
                   />
                 )
@@ -406,18 +639,33 @@ export default function DashboardPage() {
               const hasSOS = sosUserIds.has(loc.user_id)
               const memberRole = memberRoles[loc.user_id] ?? 'resident'
               const color = isSelf ? DOT_COLORS.self : hasSOS ? DOT_COLORS.sos : DOT_COLORS[memberRole] ?? DOT_COLORS.resident
+              const sosForUser = sosEvents.find(s => s.user_id === loc.user_id)
+              const isClickable = isManager && !!sosForUser
               return (
                 <div
                   key={loc.user_id}
-                  title={isSelf ? 'You' : memberRole.replace('_', ' ')}
+                  title={isSelf ? 'You' : memberRole.replaceAll('_', ' ')}
+                  onClick={isClickable ? () => setSelectedSOS(sosForUser!.id) : undefined}
                   style={{
                     position: 'absolute',
                     left: `${loc.x_percent}%`,
                     top: `${loc.y_percent}%`,
                     transform: 'translate(-50%, -50%)',
-                    zIndex: isSelf ? 20 : 10,
+                    zIndex: isSelf ? 20 : hasSOS ? 15 : 10,
+                    cursor: isClickable ? 'pointer' : 'default',
                   }}
                 >
+                  {/* Pulsing ring for SOS users (manager view) */}
+                  {isManager && hasSOS && (
+                    <div style={{
+                      position: 'absolute',
+                      inset: '-8px',
+                      borderRadius: '50%',
+                      border: '2px solid #dc2626',
+                      animation: 'sos-ring-pulse 1.4s ease-out infinite',
+                      pointerEvents: 'none',
+                    }} />
+                  )}
                   <div
                     className={isSelf ? 'user-dot-self' : undefined}
                     style={{
@@ -430,6 +678,26 @@ export default function DashboardPage() {
                       position: 'relative',
                     }}
                   />
+                  {/* Name label for manager SOS view */}
+                  {isManager && hasSOS && (
+                    <div style={{
+                      position: 'absolute',
+                      top: '100%',
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      marginTop: '3px',
+                      background: 'rgba(220,38,38,0.9)',
+                      color: '#fff',
+                      fontSize: '0.6rem',
+                      fontWeight: 600,
+                      borderRadius: '3px',
+                      padding: '1px 4px',
+                      whiteSpace: 'nowrap',
+                      pointerEvents: 'none',
+                    }}>
+                      {loc.user_id.slice(0, 8)}
+                    </div>
+                  )}
                 </div>
               )
             })}
@@ -450,9 +718,17 @@ export default function DashboardPage() {
 
             {/* Hazard markers */}
             {hazardsOnFloor.map(h => {
-              const px = h.coord_x && activeFloor?.floor_plan_width ? (h.coord_x / activeFloor.floor_plan_width) * 100 : null
-              const py = h.coord_y && activeFloor?.floor_plan_height ? (h.coord_y / activeFloor.floor_plan_height) * 100 : null
+              const px = h.x_percent ?? (h.coord_x && activeFloor?.floor_plan_width ? (h.coord_x / activeFloor.floor_plan_width) * 100 : null)
+              const py = h.y_percent ?? (h.coord_y && activeFloor?.floor_plan_height ? (h.coord_y / activeFloor.floor_plan_height) * 100 : null)
               if (px == null || py == null) return null
+              const mtype = h.marker_type ?? h.hazard_type
+              const color = hazardColor(mtype)
+              const confirmedCount = (h.confirmed_by ?? []).length
+              const isConfirmed = confirmedCount >= 2
+              const isOld = h.created_at ? (now - new Date(h.created_at).getTime()) > 2 * 60 * 60 * 1000 : false
+              const opacity = isOld && !isConfirmed ? 0.4 : 1
+              const isOwnMarker = h.created_by === userId
+              const canConfirm = !isManager && !isOwnMarker && !(h.confirmed_by ?? []).includes(userId)
               return (
                 <div
                   key={h.id}
@@ -460,13 +736,70 @@ export default function DashboardPage() {
                     position: 'absolute', left: `${px}%`, top: `${py}%`,
                     transform: 'translate(-50%,-50%)', fontSize: '1.2rem',
                     filter: 'drop-shadow(0 1px 2px rgba(0,0,0,0.4))', zIndex: 12,
+                    opacity, fontWeight: isConfirmed ? 700 : 400,
                   }}
-                  title={h.hazard_type}
+                  title={mtype}
                 >
-                  {hazardIcon(h.hazard_type)}
+                  <span style={{ color }}>{hazardIcon(mtype)}</span>
+                  {can(jwtClaims, 'RESOLVE_HAZARD') && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); dismissHazard(h.id) }}
+                      style={{
+                        position: 'absolute', top: '-6px', right: '-10px',
+                        background: '#dc2626', color: '#fff', border: 'none',
+                        borderRadius: '50%', width: '14px', height: '14px',
+                        fontSize: '9px', cursor: 'pointer', lineHeight: '14px',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        padding: 0,
+                      }}
+                      title="Resolve hazard"
+                    >×</button>
+                  )}
+                  {canConfirm && (
+                    <button
+                      onClick={(e) => { e.stopPropagation(); confirmHazard(h.id) }}
+                      style={{
+                        position: 'absolute', bottom: '-14px', left: '50%', transform: 'translateX(-50%)',
+                        background: '#2563eb', color: '#fff', border: 'none',
+                        borderRadius: '8px', padding: '1px 5px',
+                        fontSize: '9px', cursor: 'pointer', whiteSpace: 'nowrap',
+                      }}
+                      title="Confirm this hazard"
+                    >Confirm</button>
+                  )}
                 </div>
               )
             })}
+
+            {/* Placement mode banner */}
+            {placingMarker && (
+              <div style={{
+                position: 'absolute', top: 0, left: 0, right: 0, zIndex: 30,
+                background: 'rgba(37,99,235,0.92)', color: '#fff',
+                padding: '0.5rem 1rem', fontSize: '0.875rem', fontWeight: 600,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+              }}>
+                <span>Click on the floor plan to place marker</span>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setPlacingMarker(false) }}
+                  style={{ background: 'none', border: 'none', color: '#fff', cursor: 'pointer', fontSize: '1rem' }}
+                >✕</button>
+              </div>
+            )}
+
+            {/* Add Marker button — top right of map */}
+            {can(jwtClaims, 'ADD_HAZARD_MARKER') && !placingMarker && (
+              <div style={{ position: 'absolute', top: '0.75rem', right: '0.75rem', zIndex: 20 }}>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setPlacingMarker(true); setPendingMarkerPos(null) }}
+                  style={{
+                    background: 'rgba(0,0,0,0.72)', color: '#fff', border: 'none',
+                    borderRadius: '20px', padding: '0.3rem 0.85rem', fontSize: '0.8rem',
+                    cursor: 'pointer', display: 'flex', alignItems: 'center', gap: '0.3rem',
+                  }}
+                >＋ Add Marker</button>
+              </div>
+            )}
 
             {/* Status badges — top of map */}
             <div style={{ position: 'absolute', top: '0.75rem', left: '0.75rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -499,7 +832,7 @@ export default function DashboardPage() {
                 <span>{activeIncident.title}</span>
                 <span style={{ fontWeight: 400, opacity: 0.85, marginLeft: '0.5rem' }}>
                   — {severityLabel(activeIncident.severity)} severity
-                  {nearestExit ? ' · Follow green route to exit' : ''}
+                  {evacuationRoute ? ` · ${evacuationRoute.message ?? 'Follow green route to exit'}` : ''}
                 </span>
               </div>
             )}
@@ -527,6 +860,116 @@ export default function DashboardPage() {
 
         {/* ── RIGHT: Incident feed + people list ── */}
         <div className="floor-plan-right">
+
+          {/* Inline add-marker panel */}
+          {pendingMarkerPos && (
+            <div style={{
+              border: '1px solid var(--border)', borderRadius: '8px',
+              padding: '1rem', background: 'var(--card-bg, #fff)',
+              display: 'flex', flexDirection: 'column', gap: '0.75rem',
+            }}>
+              <div style={{ fontWeight: 600, fontSize: '0.875rem' }}>Place Hazard Marker</div>
+              <div style={{ display: 'flex', gap: '0.4rem', flexWrap: 'wrap' }}>
+                {([
+                  { label: 'Fire', value: 'fire' },
+                  { label: 'Smoke', value: 'smoke' },
+                  { label: 'Blocked Exit', value: 'blocked_exit' },
+                  { label: 'Threat', value: 'threat' },
+                  { label: 'Other', value: 'other' },
+                ] as { label: string; value: string }[]).map(opt => (
+                  <button
+                    key={opt.value}
+                    onClick={() => setSelectedMarkerType(opt.value)}
+                    style={{
+                      padding: '0.3rem 0.65rem', borderRadius: '6px', fontSize: '0.75rem',
+                      border: `2px solid ${hazardColor(opt.value)}`,
+                      background: selectedMarkerType === opt.value ? hazardColor(opt.value) : 'transparent',
+                      color: selectedMarkerType === opt.value ? '#fff' : hazardColor(opt.value),
+                      cursor: 'pointer', fontWeight: selectedMarkerType === opt.value ? 600 : 400,
+                    }}
+                  >{opt.label}</button>
+                ))}
+              </div>
+              <div style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+                Placing at {pendingMarkerPos.x}%, {pendingMarkerPos.y}%
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  onClick={submitHazardMarker}
+                  disabled={submitting}
+                  style={{
+                    flex: 1, padding: '0.45rem', borderRadius: '6px', border: 'none',
+                    background: 'var(--primary)', color: '#fff', cursor: submitting ? 'not-allowed' : 'pointer',
+                    fontSize: '0.8rem', fontWeight: 600, opacity: submitting ? 0.6 : 1,
+                  }}
+                >{submitting ? 'Submitting…' : 'Submit'}</button>
+                <button
+                  onClick={() => { setPendingMarkerPos(null); setSelectedMarkerType('other') }}
+                  style={{
+                    padding: '0.45rem 0.9rem', borderRadius: '6px',
+                    border: '1px solid var(--border)', background: 'none',
+                    cursor: 'pointer', fontSize: '0.8rem',
+                  }}
+                >Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {/* Dispatch panel — shown when manager clicks an SOS dot */}
+          {can(jwtClaims, 'VIEW_RESPONDER_PANEL') && selectedSOS && (() => {
+            const sos = sosEvents.find(s => s.id === selectedSOS)
+            return (
+              <div style={{
+                border: '1px solid #dc2626', borderRadius: '8px',
+                padding: '0.75rem 1rem', background: 'rgba(220,38,38,0.04)',
+              }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                  <span style={{ fontWeight: 700, fontSize: '0.875rem', color: '#dc2626' }}>Dispatch Responder</span>
+                  <button
+                    onClick={() => setSelectedSOS(null)}
+                    style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: '1rem', color: 'var(--muted)', lineHeight: 1 }}
+                  >×</button>
+                </div>
+                {sos && (
+                  <div style={{ fontSize: '0.8rem', marginBottom: '0.6rem' }}>
+                    <div>SOS from user <span style={{ fontFamily: 'monospace' }}>{sos.user_id.slice(0, 8)}</span></div>
+                    <div style={{ color: 'var(--muted)', textTransform: 'capitalize' }}>Status: {sos.status}</div>
+                  </div>
+                )}
+                <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginBottom: '0.4rem', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Available responders
+                </div>
+                {responders.length === 0 ? (
+                  <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>No responders available</div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.35rem' }}>
+                    {responders.map(r => (
+                      <div key={r.user_id} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', fontSize: '0.8rem' }}>
+                        <span style={{ fontFamily: 'monospace', color: 'var(--muted)' }}>{r.user_id.slice(0, 8)}</span>
+                        <span style={{ flex: 1, textTransform: 'capitalize', color: 'var(--muted)' }}>
+                          {r.role.replaceAll('_', ' ')}{r.unit_number ? ` · ${r.unit_number}` : ''}
+                        </span>
+                        <button
+                          disabled={dispatching}
+                          onClick={() => handleDispatch(r.user_id)}
+                          style={{
+                            padding: '0.2rem 0.6rem', borderRadius: '4px',
+                            border: '1px solid #2563eb', background: 'none',
+                            color: '#2563eb', cursor: dispatching ? 'not-allowed' : 'pointer',
+                            fontSize: '0.75rem', opacity: dispatching ? 0.6 : 1,
+                          }}
+                        >Assign</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {dispatchError && (
+                  <div style={{ marginTop: '0.5rem', fontSize: '0.75rem', color: '#dc2626' }}>{dispatchError}</div>
+                )}
+              </div>
+            )
+          })()}
+
           <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
             Live Feed
           </div>
@@ -559,14 +1002,129 @@ export default function DashboardPage() {
                   <div style={{ fontWeight: 600, fontSize: '0.875rem', marginBottom: '0.25rem' }}>{inc.title}</div>
                   <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
                     <span className="badge badge-red" style={{ fontSize: '0.7rem' }}>{severityLabel(inc.severity)}</span>
-                    <span className="badge badge-gray" style={{ fontSize: '0.7rem', textTransform: 'capitalize' }}>{inc.incident_type.replace('_', ' ')}</span>
+                    <span className="badge badge-gray" style={{ fontSize: '0.7rem', textTransform: 'capitalize' }}>{inc.incident_type.replaceAll('_', ' ')}</span>
                   </div>
                   <div style={{ fontSize: '0.75rem', color: 'var(--muted)', marginTop: '0.4rem' }}>
                     {new Date(inc.created_at).toLocaleTimeString()}
                   </div>
+                  {can(jwtClaims, 'UPDATE_INCIDENT_STATUS') && (
+                    <div style={{ display: 'flex', gap: '0.3rem', marginTop: '0.6rem', flexWrap: 'wrap' }}>
+                      {(['investigating', 'contained', 'resolved'] as const).map(s => (
+                        <button
+                          key={s}
+                          disabled={statusUpdating === inc.id}
+                          onClick={() => handleStatusChange(inc.id, s)}
+                          style={{
+                            padding: '0.15rem 0.5rem', borderRadius: '4px', fontSize: '0.7rem',
+                            border: `1px solid ${inc.status === s ? '#2563eb' : 'var(--border)'}`,
+                            background: inc.status === s ? '#2563eb' : 'none',
+                            color: inc.status === s ? '#fff' : 'var(--muted)',
+                            cursor: (inc.status === s || statusUpdating === inc.id) ? 'default' : 'pointer',
+                            textTransform: 'capitalize',
+                            opacity: statusUpdating === inc.id ? 0.6 : 1,
+                          }}
+                        >{s}</button>
+                      ))}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
+          )}
+
+          {/* 000 Emergency Services */}
+          {activeIncident && can(jwtClaims, 'UPDATE_INCIDENT_STATUS') && (
+            <div style={{ padding: '0.75rem 1rem', border: '2px solid #dc2626', borderRadius: '8px', background: '#fef2f2' }}>
+              <div style={{ fontWeight: 700, fontSize: '0.875rem', color: '#dc2626', marginBottom: '0.6rem' }}>
+                🚨 Emergency Services
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {/* One-tap 000 call */}
+                <a
+                  href="tel:000"
+                  style={{
+                    display: 'block', padding: '0.6rem 1rem', background: '#dc2626',
+                    color: '#fff', borderRadius: '6px', textAlign: 'center',
+                    fontWeight: 700, fontSize: '0.9rem', textDecoration: 'none',
+                  }}
+                >
+                  📞 Call 000 Now
+                </a>
+                {/* Copy incident brief */}
+                <button
+                  onClick={() => handleCopyBrief()}
+                  disabled={copyingBrief}
+                  style={{
+                    padding: '0.5rem 1rem', background: copyingBrief ? '#f3f4f6' : '#fff',
+                    border: '1px solid #d1d5db', borderRadius: '6px', cursor: 'pointer',
+                    fontSize: '0.8rem', fontWeight: 600,
+                  }}
+                >
+                  {copyingBrief ? 'Generating brief…' : briefCopied ? '✅ Brief copied!' : '📋 Copy incident brief'}
+                </button>
+                {briefError && <div style={{ fontSize: '0.75rem', color: '#dc2626' }}>{briefError}</div>}
+              </div>
+            </div>
+          )}
+
+          {/* Active Hazards section */}
+          {hazardsOnFloor.length > 0 && (
+            <>
+              <div style={{ fontWeight: 600, fontSize: '0.875rem', color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginTop: '0.5rem' }}>
+                Active Hazards ({hazardsOnFloor.length})
+              </div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                {hazardsOnFloor.map(h => {
+                  const mtype = h.marker_type ?? h.hazard_type
+                  const color = hazardColor(mtype)
+                  const confirmedCount = (h.confirmed_by ?? []).length
+                  const isConfirmed = confirmedCount >= 2
+                  const isOld = h.created_at ? (now - new Date(h.created_at).getTime()) > 2 * 60 * 60 * 1000 : false
+                  const dimmed = isOld && !isConfirmed
+                  const floorName = floors.find(f => f.id === h.floor_id)?.level_label ?? 'Unknown floor'
+                  const canConfirmSidebar = !isManager && h.created_by !== userId && !(h.confirmed_by ?? []).includes(userId)
+                  return (
+                    <div key={h.id} style={{
+                      display: 'flex', alignItems: 'center', gap: '0.6rem',
+                      padding: '0.45rem 0.6rem', borderRadius: '6px',
+                      border: `1px solid ${color}40`,
+                      background: `${color}08`,
+                      opacity: dimmed ? 0.4 : 1,
+                      fontSize: '0.8rem',
+                    }}>
+                      <span style={{ color, fontSize: '1rem', flexShrink: 0 }}>{hazardIcon(mtype)}</span>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontWeight: isConfirmed ? 700 : 400, textTransform: 'capitalize' }}>
+                          {mtype.replaceAll('_', ' ')}
+                        </div>
+                        <div style={{ color: 'var(--muted)', fontSize: '0.7rem' }}>
+                          {floorName} · {relativeTime(h.created_at)}
+                          {isConfirmed && ' · Confirmed'}
+                        </div>
+                      </div>
+                      {canConfirmSidebar && (
+                        <button
+                          onClick={() => confirmHazard(h.id)}
+                          style={{
+                            padding: '0.2rem 0.5rem', borderRadius: '4px', border: `1px solid ${color}`,
+                            background: 'none', color, cursor: 'pointer', fontSize: '0.7rem', flexShrink: 0,
+                          }}
+                        >Confirm</button>
+                      )}
+                      {can(jwtClaims, 'RESOLVE_HAZARD') && (
+                        <button
+                          onClick={() => dismissHazard(h.id)}
+                          style={{
+                            padding: '0.2rem 0.5rem', borderRadius: '4px', border: '1px solid #dc2626',
+                            background: 'none', color: '#dc2626', cursor: 'pointer', fontSize: '0.7rem', flexShrink: 0,
+                          }}
+                        >Resolve</button>
+                      )}
+                    </div>
+                  )
+                })}
+              </div>
+            </>
           )}
 
           {/* People on this floor */}
