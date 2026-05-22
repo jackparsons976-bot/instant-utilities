@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/providers/AuthProvider'
 import { useToast } from '@/components/Toast'
 import { getSupabaseClient } from '@/lib/supabase/client'
+import { can } from '@/lib/permissions/can'
 
 interface Incident {
   id: string; incident_type: string; status: string; title: string
@@ -35,7 +36,7 @@ function elapsed(dateStr: string) {
 }
 
 export default function EmergencyPage() {
-  const { session } = useAuth()
+  const { session, jwtClaims } = useAuth()
   const { toast } = useToast()
   const [incidents, setIncidents] = useState<Incident[]>([])
   const [timeline, setTimeline] = useState<TimelineEntry[]>([])
@@ -54,8 +55,7 @@ export default function EmergencyPage() {
   const reconnectAttempts = useRef(0)
 
   const facilityId = session?.user?.app_metadata?.active_facility_ids?.[0]
-  const role = (session?.user?.app_metadata?.platform_role as string) ?? 'resident'
-  const isManager = role === 'facility_manager' || role === 'platform_admin'
+  const canResolveHazards = can(jwtClaims, 'RESOLVE_HAZARD')
   const activeIncidents = incidents.filter(i => i.status === 'active')
   const activeIncidentId = activeIncidents[0]?.id ?? null
 
@@ -350,7 +350,7 @@ export default function EmergencyPage() {
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
             <table className="table">
               <thead>
-                <tr><th>Type</th><th>Location</th><th>Reported</th><th>Notes</th>{isManager && <th></th>}</tr>
+                <tr><th>Type</th><th>Location</th><th>Reported</th><th>Notes</th>{canResolveHazards && <th></th>}</tr>
               </thead>
               <tbody>
                 {hazards.map(h => (
@@ -363,7 +363,7 @@ export default function EmergencyPage() {
                     <td style={{ color: 'var(--muted)', fontSize: '0.85rem' }}>{h.floor ?? '—'}</td>
                     <td style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>{elapsed(h.created_at)}</td>
                     <td style={{ fontSize: '0.85rem' }}>{h.notes ?? '—'}</td>
-                    {isManager && (
+                    {canResolveHazards && (
                       <td>
                         <button className="btn btn-outline" style={{ fontSize: '0.75rem', padding: '0.2rem 0.6rem' }}
                           onClick={() => resolveHazard(h.id)}>

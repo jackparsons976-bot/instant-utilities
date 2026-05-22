@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/providers/AuthProvider'
 import { useToast } from '@/components/Toast'
 import { getSupabaseClient } from '@/lib/supabase/client'
+import { can } from '@/lib/permissions/can'
 
 interface Member {
   id: string; user_id: string; role: string
@@ -11,17 +12,54 @@ interface Member {
 }
 
 export default function ResidentsPage() {
-  const { session } = useAuth()
+  const { session, jwtClaims } = useAuth()
   const { toast } = useToast()
   const [members, setMembers] = useState<Member[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
   const [editingId, setEditingId] = useState<string | null>(null)
   const [editUnit, setEditUnit] = useState('')
+  const [showInviteForm, setShowInviteForm] = useState(false)
+  const [inviteEmail, setInviteEmail] = useState('')
+  const [inviteRole, setInviteRole] = useState('resident')
+  const [inviteUnit, setInviteUnit] = useState('')
+  const [inviting, setInviting] = useState(false)
+  const [inviteMsg, setInviteMsg] = useState<string | null>(null)
+  const [pendingInvitations, setPendingInvitations] = useState<{id:string,email:string,role:string,unit_number:string|null,expires_at:string}[]>([])
 
-  const facilityId = session?.user?.app_metadata?.active_facility_ids?.[0]
-  const role = (session?.user?.app_metadata?.platform_role as string) ?? 'resident'
-  const isManager = role === 'facility_manager' || role === 'platform_admin'
+  const facilityId = jwtClaims?.app_metadata?.active_facility_ids?.[0] ?? jwtClaims?.active_facility_ids?.[0]
+  const canManageResidents = can(jwtClaims, 'MANAGE_RESIDENTS')
+
+  async function loadInvitations() {
+    if (!facilityId || !canManageResidents) return
+    const { data } = await (getSupabaseClient() as any).schema('facility').from('invitations')
+      .select('id,email,role,unit_number,expires_at')
+      .eq('facility_id', facilityId).is('accepted_at', null).gt('expires_at', new Date().toISOString())
+      .order('created_at', { ascending: false })
+    setPendingInvitations(data ?? [])
+  }
+
+  async function sendInvite() {
+    if (!facilityId || !inviteEmail) return
+    setInviting(true); setInviteMsg(null)
+    try {
+      const sb = getSupabaseClient()
+      const { data: inv, error } = await (sb as any).schema('facility').from('invitations').insert({
+        facility_id: facilityId, invited_by: session?.user?.id,
+        email: inviteEmail, role: inviteRole, unit_number: inviteUnit || null,
+      }).select('id').single()
+      if (error) throw error
+      await sb.functions.invoke('send-invitation', { body: { invitationId: inv.id } })
+      setInviteMsg('✅ Invitation sent'); setInviteEmail(''); setInviteUnit(''); setShowInviteForm(false)
+      loadInvitations()
+    } catch (err: any) { setInviteMsg('Error: ' + (err?.message ?? 'Failed')) }
+    finally { setInviting(false) }
+  }
+
+  async function revokeInvitation(id: string) {
+    await (getSupabaseClient() as any).schema('facility').from('invitations').delete().eq('id', id)
+    setPendingInvitations(prev => prev.filter(i => i.id !== id))
+  }
 
   useEffect(() => {
     if (!facilityId) { setLoading(false); return }
@@ -30,7 +68,7 @@ export default function ResidentsPage() {
       .eq('facility_id', facilityId)
       .is('left_at', null)
       .order('joined_at', { ascending: false })
-      .then(({ data }) => { setMembers((data ?? []) as Member[]); setLoading(false) })
+      .then(({ data }) => { setMembers((data ?? []) as Member[]); setLoading(false); loadInvitations() })
   }, [facilityId])
 
   async function saveUnit(memberId: string) {
@@ -55,14 +93,59 @@ export default function ResidentsPage() {
           <h1 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.25rem' }}>Residents</h1>
           <p style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>{members.length} active members</p>
         </div>
-        <input
-          className="input"
-          placeholder="Search by unit or role…"
-          value={search}
-          onChange={e => setSearch(e.target.value)}
-          style={{ maxWidth: '240px' }}
-        />
+        <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+          <input
+            className="input"
+            placeholder="Search by unit or role…"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            style={{ maxWidth: '240px' }}
+          />
+          {canManageResidents && (
+            <button className="btn btn-primary" onClick={() => { setShowInviteForm(f => !f); setInviteMsg(null) }}>
+              Invite resident
+            </button>
+          )}
+        </div>
       </div>
+
+      {showInviteForm && canManageResidents && (
+        <div className="card" style={{ padding: '1.25rem', display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>Send invitation</h3>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <label style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Email</label>
+              <input className="input" placeholder="resident@example.com" value={inviteEmail}
+                onChange={e => setInviteEmail(e.target.value)} style={{ minWidth: '220px' }} />
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <label style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Role</label>
+              <select className="input" value={inviteRole} onChange={e => setInviteRole(e.target.value)}>
+                <option value="resident">Resident</option>
+                <option value="facility_manager">Facility Manager</option>
+              </select>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
+              <label style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>Unit (optional)</label>
+              <input className="input" placeholder="Unit #" value={inviteUnit}
+                onChange={e => setInviteUnit(e.target.value)} style={{ maxWidth: '120px' }} />
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <button className="btn btn-primary" onClick={sendInvite} disabled={inviting || !inviteEmail}>
+                {inviting ? 'Sending…' : 'Send invite'}
+              </button>
+              <button className="btn btn-secondary" onClick={() => { setShowInviteForm(false); setInviteMsg(null) }}>
+                Cancel
+              </button>
+            </div>
+          </div>
+          {inviteMsg && (
+            <p style={{ fontSize: '0.875rem', color: inviteMsg.startsWith('Error') ? 'var(--error, red)' : 'var(--success, green)', margin: 0 }}>
+              {inviteMsg}
+            </p>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
@@ -77,7 +160,7 @@ export default function ResidentsPage() {
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <table className="table">
             <thead>
-              <tr><th>User</th><th>Role</th><th>Unit</th><th>Joined</th>{isManager && <th></th>}</tr>
+              <tr><th>User</th><th>Role</th><th>Unit</th><th>Joined</th>{canManageResidents && <th></th>}</tr>
             </thead>
             <tbody>
               {filtered.map(m => (
@@ -109,7 +192,7 @@ export default function ResidentsPage() {
                   <td style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
                     {new Date(m.joined_at).toLocaleDateString()}
                   </td>
-                  {isManager && (
+                  {canManageResidents && (
                     <td>
                       {editingId !== m.id && (
                         <button className="btn btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', color: 'var(--muted)' }}
@@ -123,6 +206,43 @@ export default function ResidentsPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {canManageResidents && pendingInvitations.length > 0 && (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+          <h2 style={{ fontSize: '1rem', fontWeight: 600, margin: 0 }}>Pending invitations</h2>
+          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+            <table className="table">
+              <thead>
+                <tr><th>Email</th><th>Role</th><th>Unit</th><th>Expires</th><th></th></tr>
+              </thead>
+              <tbody>
+                {pendingInvitations.map(inv => (
+                  <tr key={inv.id}>
+                    <td>{inv.email}</td>
+                    <td>
+                      <span className={`badge ${inv.role === 'facility_manager' ? 'badge-black' : 'badge-gray'}`}>
+                        {inv.role.replace(/_/g, ' ')}
+                      </span>
+                    </td>
+                    <td style={{ color: inv.unit_number ? 'var(--fg)' : 'var(--muted)' }}>
+                      {inv.unit_number ?? '—'}
+                    </td>
+                    <td style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>
+                      {new Date(inv.expires_at).toLocaleDateString()}
+                    </td>
+                    <td>
+                      <button className="btn btn-ghost" style={{ fontSize: '0.75rem', padding: '0.2rem 0.5rem', color: 'var(--muted)' }}
+                        onClick={() => revokeInvitation(inv.id)}>
+                        Revoke
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       )}
     </div>

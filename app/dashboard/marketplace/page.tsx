@@ -4,6 +4,7 @@ import { useState, useEffect, FormEvent } from 'react'
 import { useAuth } from '@/providers/AuthProvider'
 import { useToast } from '@/components/Toast'
 import { getSupabaseClient } from '@/lib/supabase/client'
+import { can } from '@/lib/permissions/can'
 
 interface Vendor {
   id: string; name: string; description: string | null
@@ -21,7 +22,7 @@ interface Job {
 const SERVICES = ['Plumbing', 'Electrical', 'HVAC', 'Cleaning', 'Security', 'Landscaping', 'Painting', 'General maintenance']
 
 export default function MarketplacePage() {
-  const { session } = useAuth()
+  const { session, jwtClaims } = useAuth()
   const { toast } = useToast()
   const [vendors, setVendors] = useState<Vendor[]>([])
   const [facilityVendorIds, setFacilityVendorIds] = useState<Set<string>>(new Set())
@@ -37,8 +38,7 @@ export default function MarketplacePage() {
   const [submitting, setSubmitting] = useState(false)
 
   const facilityId = session?.user?.app_metadata?.active_facility_ids?.[0]
-  const role = (session?.user?.app_metadata?.platform_role as string) ?? 'resident'
-  const isManager = role === 'facility_manager' || role === 'platform_admin'
+  const canManageVendors = can(jwtClaims, 'MANAGE_VENDORS')
 
   useEffect(() => {
     if (!facilityId) { setLoading(false); return }
@@ -54,7 +54,7 @@ export default function MarketplacePage() {
         .select('id, title, status, created_at, vendor_id')
         .eq('facility_id', facilityId)
         .order('created_at', { ascending: false }).limit(20),
-      isManager
+      canManageVendors
         ? sb.schema('marketplace').from('jobs')
             .select('id, title, status, scheduled_at, is_emergency_dispatch, vendor_id')
             .eq('facility_id', facilityId)
@@ -67,7 +67,7 @@ export default function MarketplacePage() {
       setJobs((jData ?? []) as Job[])
       setLoading(false)
     })
-  }, [facilityId, isManager])
+  }, [facilityId, canManageVendors])
 
   const approvedVendors = vendors.filter(v => facilityVendorIds.has(v.id))
   const businessTypes = ['all', ...Array.from(new Set(vendors.map(v => v.business_type)))]
@@ -173,7 +173,7 @@ export default function MarketplacePage() {
       )}
 
       {/* Jobs (managers only) */}
-      {isManager && jobs.length > 0 && (
+      {canManageVendors && jobs.length > 0 && (
         <div>
           <h2 style={{ fontWeight: 600, fontSize: '1rem', marginBottom: '0.75rem' }}>Scheduled Jobs</h2>
           <div className="card" style={{ padding: 0, overflow: 'hidden' }}>

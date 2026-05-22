@@ -4,6 +4,7 @@ import { useState, useEffect, FormEvent } from 'react'
 import { useAuth } from '@/providers/AuthProvider'
 import { useToast } from '@/components/Toast'
 import { getSupabaseClient } from '@/lib/supabase/client'
+import { can } from '@/lib/permissions/can'
 
 interface Announcement {
   id: string; title: string; body: string
@@ -22,7 +23,7 @@ function expiryBadge(expiresAt: string | null) {
 }
 
 export default function AnnouncementsPage() {
-  const { session } = useAuth()
+  const { session, jwtClaims } = useAuth()
   const { toast } = useToast()
   const [items, setItems] = useState<Announcement[]>([])
   const [loading, setLoading] = useState(true)
@@ -33,8 +34,7 @@ export default function AnnouncementsPage() {
   const [submitting, setSubmitting] = useState(false)
 
   const facilityId = session?.user?.app_metadata?.active_facility_ids?.[0]
-  const role = (session?.user?.app_metadata?.platform_role as string) ?? 'resident'
-  const isManager = role === 'facility_manager' || role === 'platform_admin'
+  const canManageResidents = can(jwtClaims, 'MANAGE_RESIDENTS')
 
   useEffect(() => {
     if (!facilityId) { setLoading(false); return }
@@ -74,14 +74,14 @@ export default function AnnouncementsPage() {
           <h1 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.25rem' }}>Announcements</h1>
           <p style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>Building notices and updates</p>
         </div>
-        {isManager && (
+        {canManageResidents && (
           <button className="btn btn-primary" onClick={() => setShowForm(v => !v)}>
             {showForm ? 'Cancel' : '+ New announcement'}
           </button>
         )}
       </div>
 
-      {isManager && showForm && (
+      {canManageResidents && showForm && (
         <div className="card">
           <h2 style={{ fontWeight: 600, fontSize: '1rem', marginBottom: '1rem' }}>Post announcement</h2>
           <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
@@ -112,7 +112,7 @@ export default function AnnouncementsPage() {
       ) : items.length === 0 ? (
         <div className="placeholder-section">
           <h3>No announcements yet</h3>
-          <p>{isManager ? 'Post your first announcement using the button above.' : 'Nothing posted yet. Check back later.'}</p>
+          <p>{canManageResidents ? 'Post your first announcement using the button above.' : 'Nothing posted yet. Check back later.'}</p>
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>

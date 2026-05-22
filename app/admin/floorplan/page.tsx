@@ -29,6 +29,14 @@ export default function FloorPlanAdminPage() {
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
   const fileRef = useRef<HTMLInputElement>(null)
+  const mapRef = useRef<HTMLDivElement>(null)
+
+  const [nodes, setNodes] = useState<{id?:string,label:string,node_type:string,zone:string|null,x_percent:number,y_percent:number,dirty:boolean}[]>([])
+  const [savingNodes, setSavingNodes] = useState(false)
+  const [draggingIdx, setDraggingIdx] = useState<number|null>(null)
+  const [addingNode, setAddingNode] = useState<{x:number,y:number}|null>(null)
+  const [newLabel, setNewLabel] = useState('')
+  const [newType, setNewType] = useState('room')
 
   const [geoBounds, setGeoBounds] = useState({
     lat_min: '', lat_max: '', lng_min: '', lng_max: '',
@@ -83,6 +91,15 @@ export default function FloorPlanAdminPage() {
       level_label: floor.level_label ?? '',
     })
   }, [selectedFloorId, floors])
+
+  // Load QR nodes when floor changes
+  useEffect(() => {
+    if (!selectedFloorId || !selectedFacilityId) return
+    ;(getSupabaseClient() as any).schema('qr').from('nodes')
+      .select('id,label,node_type,zone,x_percent,y_percent')
+      .eq('floor_id', selectedFloorId).eq('facility_id', selectedFacilityId).eq('is_active', true)
+      .then(({ data }: any) => setNodes((data ?? []).map((n: any) => ({...n, dirty: false}))))
+  }, [selectedFloorId, selectedFacilityId])
 
   async function uploadFloorPlan() {
     if (!fileRef.current?.files?.[0] || !selectedFloorId || !selectedFacilityId) {
@@ -142,6 +159,47 @@ export default function FloorPlanAdminPage() {
       setFloors(prev => prev.map(f => f.id === selectedFloorId ? { ...f, ...parsed } : f))
     }
     setSaving(false)
+  }
+
+  function handleMapClick(e: React.MouseEvent<HTMLDivElement>) {
+    if (draggingIdx !== null) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = ((e.clientX - rect.left) / rect.width) * 100
+    const y = ((e.clientY - rect.top) / rect.height) * 100
+    setAddingNode({ x, y })
+    setNewLabel(''); setNewType('room')
+  }
+
+  function handleMouseMove(e: React.MouseEvent<HTMLDivElement>) {
+    if (draggingIdx === null) return
+    const rect = e.currentTarget.getBoundingClientRect()
+    const x = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100))
+    const y = Math.max(0, Math.min(100, ((e.clientY - rect.top) / rect.height) * 100))
+    setNodes(prev => prev.map((n,i) => i===draggingIdx ? {...n,x_percent:x,y_percent:y,dirty:true} : n))
+  }
+
+  function handleMouseUp() { setDraggingIdx(null) }
+
+  function confirmAddNode() {
+    if (!addingNode || !newLabel) return
+    setNodes(prev => [...prev, {label:newLabel,node_type:newType,zone:null,x_percent:addingNode.x,y_percent:addingNode.y,dirty:true}])
+    setAddingNode(null); setNewLabel(''); setNewType('room')
+  }
+
+  async function saveNodes() {
+    if (!selectedFloorId || !selectedFacilityId) return
+    setSavingNodes(true)
+    const sb = getSupabaseClient()
+    for (const n of nodes) {
+      if (!n.dirty && n.id) continue
+      if (n.id) {
+        await (sb as any).schema('qr').from('nodes').update({x_percent:n.x_percent,y_percent:n.y_percent}).eq('id',n.id)
+      } else {
+        await (sb as any).schema('qr').from('nodes').insert({facility_id:selectedFacilityId,floor_id:selectedFloorId,label:n.label,node_type:n.node_type,zone:n.zone,x_percent:n.x_percent,y_percent:n.y_percent,is_active:true})
+      }
+    }
+    setNodes(prev => prev.map(n => ({...n,dirty:false})))
+    setSavingNodes(false)
   }
 
   if (authLoading || loading) return <div className="center"><div className="spinner" /></div>
@@ -266,6 +324,80 @@ export default function FloorPlanAdminPage() {
             </button>
           </div>
         </div>
+
+        {/* Step 3: Place QR nodes */}
+        {selectedFloorId && (activeFloor?.image_url || activeFloor?.floor_plan_url) && (
+          <div className="card" style={{padding:'1.25rem'}}>
+            <h3 style={{fontWeight:600,marginBottom:'0.75rem'}}>Step 3 — Place QR Nodes</h3>
+            <p style={{fontSize:'0.8rem',color:'var(--muted)',marginBottom:'0.75rem'}}>Click on the floor plan to add a node. Drag nodes to reposition.</p>
+
+            {/* Floor plan with node overlay */}
+            <div
+              ref={mapRef}
+              style={{position:'relative',display:'inline-block',cursor:'crosshair',userSelect:'none',maxWidth:'100%'}}
+              onClick={handleMapClick}
+              onMouseMove={handleMouseMove}
+              onMouseUp={handleMouseUp}
+            >
+              <img
+                src={activeFloor?.image_url || activeFloor?.floor_plan_url || ''}
+                alt="Floor plan"
+                style={{display:'block',maxWidth:'100%',maxHeight:'500px',objectFit:'contain'}}
+                draggable={false}
+              />
+              {nodes.map((n, i) => (
+                <div
+                  key={i}
+                  onMouseDown={(e) => { e.stopPropagation(); setDraggingIdx(i) }}
+                  style={{
+                    position:'absolute', left:`${n.x_percent}%`, top:`${n.y_percent}%`,
+                    transform:'translate(-50%,-50%)', width:'14px', height:'14px',
+                    borderRadius:'50%', background:'#2563eb', border:'2px solid #fff',
+                    boxShadow:'0 1px 3px rgba(0,0,0,0.4)', cursor:'grab', zIndex:10,
+                  }}
+                  title={`${n.label} (${n.node_type})`}
+                />
+              ))}
+            </div>
+
+            {/* Add node form */}
+            {addingNode && (
+              <div style={{marginTop:'0.75rem',padding:'0.75rem',background:'#f9fafb',borderRadius:'6px',display:'flex',gap:'0.5rem',flexWrap:'wrap',alignItems:'center'}}>
+                <input className="input" placeholder="Label" value={newLabel} onChange={e=>setNewLabel(e.target.value)} style={{width:'140px'}} />
+                <select className="input" value={newType} onChange={e=>setNewType(e.target.value)} style={{width:'160px'}}>
+                  {['room','corridor','exit','emergency_exit','stairwell','lift','assembly_point','other'].map(t=><option key={t} value={t}>{t.replace('_',' ')}</option>)}
+                </select>
+                <button className="btn btn-primary" onClick={confirmAddNode} disabled={!newLabel}>Add</button>
+                <button className="btn btn-secondary" onClick={()=>setAddingNode(null)}>Cancel</button>
+              </div>
+            )}
+
+            {/* Node list */}
+            {nodes.length > 0 && (
+              <div style={{marginTop:'0.75rem'}}>
+                <div style={{fontSize:'0.8rem',color:'var(--muted)',marginBottom:'0.4rem'}}>{nodes.length} node{nodes.length!==1?'s':''}</div>
+                {nodes.map((n,i)=>(
+                  <div key={i} style={{display:'flex',gap:'0.5rem',alignItems:'center',padding:'0.25rem 0',fontSize:'0.8rem'}}>
+                    <span style={{width:'8px',height:'8px',borderRadius:'50%',background:'#2563eb',display:'inline-block'}}/>
+                    <span style={{flex:1}}>{n.label}</span>
+                    <span style={{color:'var(--muted)'}}>{n.node_type.replace('_',' ')}</span>
+                    <span style={{color:'var(--muted)'}}>({Math.round(n.x_percent)}%, {Math.round(n.y_percent)}%)</span>
+                    <button onClick={()=>setNodes(prev=>prev.filter((_,j)=>j!==i))} style={{color:'#dc2626',background:'none',border:'none',cursor:'pointer',fontSize:'0.75rem'}}>×</button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <button
+              className="btn btn-primary"
+              onClick={saveNodes}
+              disabled={savingNodes || !nodes.some(n=>n.dirty||!n.id)}
+              style={{marginTop:'0.75rem'}}
+            >
+              {savingNodes ? 'Saving…' : 'Save node positions'}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

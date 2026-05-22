@@ -4,6 +4,7 @@ import { useState, useEffect, FormEvent } from 'react'
 import { useAuth } from '@/providers/AuthProvider'
 import { useToast } from '@/components/Toast'
 import { getSupabaseClient } from '@/lib/supabase/client'
+import { can } from '@/lib/permissions/can'
 
 interface Request {
   id: string; title: string; status: string
@@ -14,7 +15,7 @@ const STATUS_ORDER = ['open', 'in_progress', 'completed', 'cancelled']
 const PRIORITY_ORDER = ['urgent', 'high', 'normal', 'low']
 
 export default function MaintenancePage() {
-  const { session } = useAuth()
+  const { session, jwtClaims } = useAuth()
   const { toast } = useToast()
   const [requests, setRequests] = useState<Request[]>([])
   const [loading, setLoading]   = useState(true)
@@ -27,8 +28,7 @@ export default function MaintenancePage() {
   const [filterPriority, setFilterPriority] = useState('all')
 
   const facilityId = session?.user?.app_metadata?.active_facility_ids?.[0]
-  const role = (session?.user?.app_metadata?.platform_role as string) ?? 'resident'
-  const isManager = role === 'facility_manager' || role === 'platform_admin'
+  const canManageResidents = can(jwtClaims, 'MANAGE_RESIDENTS')
 
   useEffect(() => {
     if (!facilityId || !session) { setLoading(false); return }
@@ -152,7 +152,7 @@ export default function MaintenancePage() {
         <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
           <table className="table">
             <thead>
-              <tr><th>Title</th><th>Priority</th><th>Status</th><th>Submitted</th>{isManager && <th>Actions</th>}</tr>
+              <tr><th>Title</th><th>Priority</th><th>Status</th><th>Submitted</th>{canManageResidents && <th>Actions</th>}</tr>
             </thead>
             <tbody>
               {filtered.map(r => (
@@ -164,7 +164,7 @@ export default function MaintenancePage() {
                   <td><span className={`badge ${r.priority === 'urgent' ? 'badge-red' : r.priority === 'high' ? 'badge-yellow' : 'badge-gray'}`}>{r.priority}</span></td>
                   <td><span className={`badge ${r.status === 'completed' ? 'badge-green' : r.status === 'in_progress' ? 'badge-yellow' : r.status === 'cancelled' ? 'badge-gray' : 'badge-gray'}`}>{r.status.replace('_', ' ')}</span></td>
                   <td style={{ color: 'var(--muted)', fontSize: '0.8rem' }}>{new Date(r.created_at).toLocaleDateString()}</td>
-                  {isManager && (
+                  {canManageResidents && (
                     <td>
                       <select className="input" value={r.status}
                         style={{ padding: '0.25rem 0.5rem', fontSize: '0.775rem', width: 'auto' }}
