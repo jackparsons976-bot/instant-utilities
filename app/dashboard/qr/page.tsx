@@ -99,6 +99,11 @@ export default function QRPage() {
   const [nodes, setNodes] = useState<QRNode[]>([])
   const [loading, setLoading] = useState(true)
   const [expandedId, setExpandedId] = useState<string | null>(null)
+  const [selectedNode, setSelectedNode] = useState<QRNode | null>(null)
+  const [activeIncident, setActiveIncident] = useState<{id:string,title:string,incident_type:string,status:string}|null>(null)
+  const [nearbyHazards, setNearbyHazards] = useState<{id:string,marker_type:string|null,x_percent:number,y_percent:number}[]>([])
+  const [nearestExits, setNearestExits] = useState<{label:string,node_type:string}[]>([])
+  const [emergencyMode, setEmergencyMode] = useState(false)
 
   const { jwtClaims } = useAuth()
   const facilityIds: string[] = jwtClaims?.app_metadata?.active_facility_ids ?? jwtClaims?.active_facility_ids ?? []
@@ -115,6 +120,40 @@ export default function QRPage() {
       .order('emergency_priority', { ascending: true })
       .then(({ data }) => { setNodes((data ?? []) as QRNode[]); setLoading(false) })
   }, [facilityId])
+
+  async function loadEmergencyContext(node: QRNode) {
+    if (!facilityId || !node.floor_id) return
+    const sb = getSupabaseClient()
+
+    // Check for active incident on this floor
+    const { data: incidents } = await (sb as any).schema('emergency').from('incidents')
+      .select('id,title,incident_type,status').eq('facility_id', facilityId).eq('status','active').limit(1)
+    const incident = incidents?.[0] ?? null
+    setActiveIncident(incident)
+    if (incident) setEmergencyMode(true)
+
+    // Nearby hazards within 20% radius of this node
+    if (node.x_percent != null && node.y_percent != null) {
+      const { data: hazards } = await (sb as any).schema('emergency').from('hazard_markers')
+        .select('id,marker_type,x_percent,y_percent').eq('facility_id', facilityId)
+        .eq('floor_id', node.floor_id).eq('is_active', true)
+      const nearby = (hazards ?? []).filter((h: any) => {
+        if (h.x_percent == null || h.y_percent == null) return false
+        const dx = h.x_percent - node.x_percent!
+        const dy = h.y_percent - node.y_percent!
+        return Math.sqrt(dx*dx + dy*dy) < 20
+      })
+      setNearbyHazards(nearby)
+    }
+
+    // Nearest exits on this floor
+    const { data: exitNodes } = await (sb as any).schema('qr').from('nodes')
+      .select('label,node_type,x_percent,y_percent')
+      .eq('facility_id', facilityId).eq('floor_id', node.floor_id).eq('is_active', true)
+      .in('node_type', ['exit','emergency_exit','stairwell','assembly_point'])
+      .order('emergency_priority', { ascending: true }).limit(3)
+    setNearestExits(exitNodes ?? [])
+  }
 
   async function toggleActive(id: string, current: boolean) {
     const { error } = await getSupabaseClient().schema('qr').from('nodes')
@@ -191,6 +230,7 @@ export default function QRPage() {
                                 style={{ fontSize: '0.8rem' }}
                                 onClick={async () => {
                                   await setLocationFromQR(userId, facilityId, n)
+                                  await loadEmergencyContext(n)
                                   toast(`Location updated — pinned to ${n.label}`, 'success')
                                 }}
                               >
@@ -206,6 +246,93 @@ export default function QRPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Emergency Full-Screen Overlay */}
+      {emergencyMode && activeIncident && (
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, zIndex: 100, background: '#dc2626', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '2rem' }}>
+          <div style={{ background: '#fff', borderRadius: '12px', padding: '2rem', maxWidth: '500px', textAlign: 'center', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }}>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 700, marginBottom: '1rem', color: '#dc2626' }}>{activeIncident.title}</h2>
+
+            {nearestExits.length > 0 && (
+              <div style={{ marginBottom: '1.5rem', textAlign: 'left', background: '#f3f4f6', padding: '1rem', borderRadius: '8px' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.5rem', color: '#374151' }}>Nearest Exits</div>
+                <ul style={{ margin: 0, paddingLeft: '1.5rem', color: '#666' }}>
+                  {nearestExits.map(e => (
+                    <li key={e.label}>{e.label} ({e.node_type.replace('_', ' ')})</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {nearbyHazards.length > 0 && (
+              <div style={{ marginBottom: '1.5rem', textAlign: 'left', background: '#fef2f2', padding: '1rem', borderRadius: '8px' }}>
+                <div style={{ fontWeight: 600, marginBottom: '0.5rem', color: '#7f1d1d' }}>Nearby Hazards</div>
+                <ul style={{ margin: 0, paddingLeft: '1.5rem', color: '#991b1b' }}>
+                  {nearbyHazards.map(h => (
+                    <li key={h.id}>{h.marker_type ? h.marker_type.replace('_', ' ') : 'Hazard'}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '1.5rem' }}>
+              {selectedNode && selectedNode.floor_id && (
+                <a
+                  href={`/dashboard/evacuate?floor=${selectedNode.floor_id}&incident=${activeIncident.id}`}
+                  style={{ padding: '0.75rem 1rem', background: '#10b981', color: '#fff', textDecoration: 'none', borderRadius: '6px', fontWeight: 600, display: 'block', textAlign: 'center' }}
+                >
+                  View Evacuation Route
+                </a>
+              )}
+              <a
+                href="tel:000"
+                style={{ padding: '0.75rem 1rem', background: '#1f2937', color: '#fff', textDecoration: 'none', borderRadius: '6px', fontWeight: 600, display: 'block', textAlign: 'center' }}
+              >
+                Call 000
+              </a>
+              <button
+                onClick={() => setEmergencyMode(false)}
+                style={{ padding: '0.75rem 1rem', background: '#6b7280', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}
+              >
+                I need help here
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Node Context Panel */}
+      {selectedNode && !emergencyMode && (
+        <div className="card" style={{ marginTop: '1rem', background: '#f9fafb', borderLeft: '4px solid #3b82f6' }}>
+          <div style={{ fontWeight: 600, marginBottom: '1rem', fontSize: '0.95rem' }}>Context: {selectedNode.label}</div>
+
+          {nearestExits.length > 0 && (
+            <div style={{ marginBottom: '1rem' }}>
+              <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#666', marginBottom: '0.5rem' }}>Nearest Exits</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                {nearestExits.map(e => (
+                  <span key={e.label} className="badge" style={{ background: '#dbeafe', color: '#1e40af' }}>
+                    {e.label}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {nearbyHazards.length > 0 && (
+            <div>
+              <div style={{ fontWeight: 600, fontSize: '0.85rem', color: '#666', marginBottom: '0.5rem' }}>Nearby Hazards</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem' }}>
+                {nearbyHazards.map(h => (
+                  <span key={h.id} className="badge" style={{ background: '#fee2e2', color: '#7f1d1d' }}>
+                    {h.marker_type ? h.marker_type.replace('_', ' ') : 'Hazard'}
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>
