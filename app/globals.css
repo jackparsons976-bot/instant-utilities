@@ -256,11 +256,22 @@ input:focus, textarea:focus, select:focus {
   color: var(--muted);
 }
 
+.hamburger-btn {
+  display: none;
+  background: none;
+  border: none;
+  font-size: 1.25rem;
+  color: var(--fg);
+  cursor: pointer;
+  align-items: center;
+  justify-content: center;
+}
+
 @media (max-width: 768px) {
   .sidebar { display: none; }
   .stats-grid { grid-template-columns: 1fr 1fr; }
-  #hamburger-btn { display: flex !important; align-items: center; justify-content: center; background: none; border: none; font-size: 1.25rem; color: var(--fg); }
-  .nav-email { display: none !important; }
+  .hamburger-btn { display: flex; }
+  .nav-email { display: none; }
   .main-content { padding: 1.25rem; }
-  .sos-btn { width: 100% !important; max-width: 100% !important; border-radius: 12px !important; height: 80px !important; }
+  .sos-btn { width: 100%; max-width: 100%; border-radius: 12px; height: 80px; }
 }

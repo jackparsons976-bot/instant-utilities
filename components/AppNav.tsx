@@ -86,8 +86,6 @@ export function AppNav({ onMenuToggle }: AppNavProps) {
           className="hamburger-btn"
           onClick={onMenuToggle}
           aria-label="Toggle menu"
-          style={{ display: 'none' }}
-          id="hamburger-btn"
         >
           ☰
         </button>

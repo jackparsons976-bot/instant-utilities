@@ -11,6 +11,7 @@ export const metadata: Metadata = {
     title: 'Instant Utilities',
     description: 'Live building intelligence, emergency coordination, and residential operations.',
     type: 'website',
+    images: [{ url: '/icon-512.png', width: 512, height: 512 }],
   },
 }
 

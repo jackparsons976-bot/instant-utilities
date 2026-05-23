@@ -54,7 +54,7 @@ export default function EmergencyPage() {
   const channelRef = useRef<any>(null)
   const reconnectAttempts = useRef(0)
 
-  const facilityId = session?.user?.app_metadata?.active_facility_ids?.[0]
+  const facilityId = jwtClaims?.app_metadata?.active_facility_ids?.[0] ?? jwtClaims?.active_facility_ids?.[0]
   const canResolveHazards = can(jwtClaims, 'RESOLVE_HAZARD')
   const activeIncidents = incidents.filter(i => i.status === 'active')
   const activeIncidentId = activeIncidents[0]?.id ?? null

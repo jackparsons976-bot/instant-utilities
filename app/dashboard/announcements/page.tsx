@@ -33,7 +33,7 @@ export default function AnnouncementsPage() {
   const [aExpiry, setAExpiry] = useState('')
   const [submitting, setSubmitting] = useState(false)
 
-  const facilityId = session?.user?.app_metadata?.active_facility_ids?.[0]
+  const facilityId = jwtClaims?.app_metadata?.active_facility_ids?.[0] ?? jwtClaims?.active_facility_ids?.[0]
   const canManageResidents = can(jwtClaims, 'MANAGE_RESIDENTS')
 
   useEffect(() => {

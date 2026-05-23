@@ -9,7 +9,7 @@ import { Sidebar } from '@/components/Sidebar'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { session, loading } = useAuth()
+  const { session, jwtClaims, loading } = useAuth()
   const router = useRouter()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
@@ -27,7 +27,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (!session) return null
 
-  const role = (session.user.app_metadata?.platform_role as string) ?? 'resident'
+  const role = jwtClaims?.app_metadata?.platform_role ?? jwtClaims?.platform_role ?? 'resident'
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>

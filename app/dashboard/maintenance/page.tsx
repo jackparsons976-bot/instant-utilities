@@ -15,7 +15,7 @@ const STATUS_ORDER = ['open', 'in_progress', 'completed', 'cancelled']
 const PRIORITY_ORDER = ['urgent', 'high', 'normal', 'low']
 
 export default function MaintenancePage() {
-  const { session, jwtClaims } = useAuth()
+  const { session, jwtClaims } = useAuth() // jwtClaims used for facilityId + permissions
   const { toast } = useToast()
   const [requests, setRequests] = useState<Request[]>([])
   const [loading, setLoading]   = useState(true)
@@ -27,7 +27,7 @@ export default function MaintenancePage() {
   const [filterStatus, setFilterStatus] = useState('all')
   const [filterPriority, setFilterPriority] = useState('all')
 
-  const facilityId = session?.user?.app_metadata?.active_facility_ids?.[0]
+  const facilityId = jwtClaims?.app_metadata?.active_facility_ids?.[0] ?? jwtClaims?.active_facility_ids?.[0]
   const canManageResidents = can(jwtClaims, 'MANAGE_RESIDENTS')
 
   useEffect(() => {

@@ -39,7 +39,13 @@
 
 ## ❌ NOT YET BUILT — RESUME HERE
 
-### System 4 (remaining features)
+### System 4 — COMPLETE (commit 42ce969)
+
+**All features built and deployed to production.**
+
+---
+
+### Remaining (none)
 
 **Feature 4.1 — QR scan → emergency context** (`app/dashboard/qr/page.tsx`)
 - After QR scan: show node context (type, zone, nearest exits, active hazards within 20%)
