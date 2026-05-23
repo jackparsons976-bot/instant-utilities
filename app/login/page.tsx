@@ -13,10 +13,38 @@ export default function LoginPage() {
   const [password, setPassword] = useState('')
   const [error, setError]       = useState('')
   const [busy, setBusy]         = useState(false)
+  const [installPrompt, setInstallPrompt] = useState<Event | null>(null)
+  const [showInstallBanner, setShowInstallBanner] = useState(false)
 
   useEffect(() => {
     if (!loading && session) router.replace('/dashboard')
   }, [session, loading, router])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    if (localStorage.getItem('pwa-prompt-dismissed')) return
+    const handler = (e: Event) => {
+      e.preventDefault()
+      setInstallPrompt(e)
+      setShowInstallBanner(true)
+    }
+    window.addEventListener('beforeinstallprompt', handler)
+    return () => window.removeEventListener('beforeinstallprompt', handler)
+  }, [])
+
+  function dismissInstall() {
+    localStorage.setItem('pwa-prompt-dismissed', '1')
+    setShowInstallBanner(false)
+  }
+
+  async function triggerInstall() {
+    if (!installPrompt) return
+    ;(installPrompt as any).prompt()
+    const { outcome } = await (installPrompt as any).userChoice
+    if (outcome === 'accepted') localStorage.setItem('pwa-prompt-dismissed', '1')
+    setShowInstallBanner(false)
+    setInstallPrompt(null)
+  }
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
@@ -33,6 +61,36 @@ export default function LoginPage() {
   return (
     <div className="center">
       <div style={{ width: '100%', maxWidth: '380px', padding: '0 1.25rem' }}>
+
+        {/* PWA install prompt — shown once on mobile */}
+        {showInstallBanner && (
+          <div style={{
+            background: '#f0fdf4', border: '1px solid #86efac', borderRadius: '10px',
+            padding: '0.875rem 1rem', marginBottom: '1.5rem',
+            display: 'flex', alignItems: 'center', gap: '0.75rem',
+          }}>
+            <img src="/icon-192.png" alt="" style={{ width: '36px', height: '36px', borderRadius: '8px', flexShrink: 0 }} />
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: '0.875rem', color: '#166534' }}>Add to Home Screen</div>
+              <div style={{ fontSize: '0.775rem', color: '#6b7280', marginTop: '0.1rem' }}>Get quick access to emergency features</div>
+            </div>
+            <div style={{ display: 'flex', gap: '0.5rem', flexShrink: 0 }}>
+              <button
+                onClick={triggerInstall}
+                style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: '6px', padding: '0.35rem 0.75rem', fontSize: '0.8rem', fontWeight: 600, cursor: 'pointer' }}
+              >
+                Install
+              </button>
+              <button
+                onClick={dismissInstall}
+                style={{ background: 'none', border: 'none', color: '#9ca3af', cursor: 'pointer', fontSize: '1rem', lineHeight: 1, padding: '0.25rem' }}
+                aria-label="Dismiss"
+              >
+                ×
+              </button>
+            </div>
+          </div>
+        )}
 
         <div style={{ marginBottom: '2rem', textAlign: 'center' }}>
           <Link href="/" style={{ fontWeight: 700, fontSize: '1.1rem' }}>Instant Utilities</Link>

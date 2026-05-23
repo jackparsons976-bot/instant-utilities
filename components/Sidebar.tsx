@@ -10,26 +10,32 @@ interface NavItem {
 }
 
 const MANAGER_NAV: NavItem[] = [
-  { label: 'Overview',      href: '/dashboard',              icon: '◻' },
+  { label: 'Home',          href: '/dashboard',              icon: '◻' },
   { label: 'Emergency',     href: '/dashboard/emergency',    icon: '🆘' },
   { label: 'Residents',     href: '/dashboard/residents',    icon: '👥' },
   { label: 'Maintenance',   href: '/dashboard/maintenance',  icon: '🔧' },
   { label: 'Announcements', href: '/dashboard/announcements',icon: '📢' },
-  { label: 'QR Nodes',      href: '/dashboard/qr',          icon: '📱' },
   { label: 'Marketplace',   href: '/dashboard/marketplace',  icon: '🛒' },
+  { label: 'Analytics',     href: '/dashboard/analytics',    icon: '📊' },
+  { label: 'Jobs',          href: '/dashboard/jobs',         icon: '💼' },
   { label: 'Messages',      href: '/dashboard/messages',     icon: '✉️' },
+  { label: 'QR Nodes',      href: '/dashboard/qr',          icon: '📱' },
+  { label: 'Settings',      href: '/dashboard/settings',     icon: '⚙️' },
 ]
 
 const ADMIN_NAV: NavItem[] = [
-  { label: 'Overview',      href: '/dashboard',              icon: '◻' },
+  { label: 'Home',          href: '/dashboard',              icon: '◻' },
   { label: 'Emergency',     href: '/dashboard/emergency',    icon: '🆘' },
   { label: 'Residents',     href: '/dashboard/residents',    icon: '👥' },
   { label: 'Maintenance',   href: '/dashboard/maintenance',  icon: '🔧' },
   { label: 'Announcements', href: '/dashboard/announcements',icon: '📢' },
-  { label: 'QR Nodes',      href: '/dashboard/qr',          icon: '📱' },
   { label: 'Marketplace',   href: '/dashboard/marketplace',  icon: '🛒' },
+  { label: 'Analytics',     href: '/dashboard/analytics',    icon: '📊' },
+  { label: 'Jobs',          href: '/dashboard/jobs',         icon: '💼' },
   { label: 'Messages',      href: '/dashboard/messages',     icon: '✉️' },
-  { label: 'Admin',         href: '/admin',                  icon: '⚙️' },
+  { label: 'QR Nodes',      href: '/dashboard/qr',          icon: '📱' },
+  { label: 'Settings',      href: '/dashboard/settings',     icon: '⚙️' },
+  { label: 'Admin',         href: '/admin',                  icon: '🏢' },
   { label: 'Floor Plans',   href: '/admin/floorplan',        icon: '🗺️' },
 ]
 
@@ -39,6 +45,8 @@ const RESIDENT_NAV: NavItem[] = [
   { label: 'Maintenance',   href: '/dashboard/maintenance',  icon: '🔧' },
   { label: 'Messages',      href: '/dashboard/messages',     icon: '✉️' },
   { label: 'Marketplace',   href: '/dashboard/marketplace',  icon: '🛒' },
+  { label: 'My Household',  href: '/dashboard/household',    icon: '🏠' },
+  { label: 'Settings',      href: '/dashboard/settings',     icon: '⚙️' },
 ]
 
 interface SidebarProps {

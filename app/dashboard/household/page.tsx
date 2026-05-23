@@ -12,6 +12,7 @@ interface HouseholdMember {
   relationship: string
   can_trigger_sos: boolean
   notify_on_emergency: boolean
+  access_token: string | null
 }
 
 interface UnitCount {
@@ -46,6 +47,7 @@ export default function HouseholdPage() {
   const [formCanSos, setFormCanSos] = useState(true)
   const [formNotifyEmergency, setFormNotifyEmergency] = useState(true)
   const [adding, setAdding] = useState(false)
+  const [generatingLink, setGeneratingLink] = useState<string | null>(null)
 
   const sb = getSupabaseClient() as any
 
@@ -60,7 +62,7 @@ export default function HouseholdPage() {
     const { data, error } = await sb
       .schema('facility')
       .from('household_members')
-      .select('id,display_name,relationship,can_trigger_sos,notify_on_emergency')
+      .select('id,display_name,relationship,can_trigger_sos,notify_on_emergency,access_token')
       .eq('user_id', userId)
       .eq('facility_id', facilityId)
     if (error) toast('Failed to load members: ' + error.message, 'error')
@@ -118,6 +120,35 @@ export default function HouseholdPage() {
       .eq('id', id)
     if (error) { toast('Update failed: ' + error.message, 'error'); return }
     setMembers(prev => prev.map(m => m.id === id ? { ...m, [field]: !current } : m))
+  }
+
+  async function generateLink(memberId: string) {
+    setGeneratingLink(memberId)
+    const token = crypto.randomUUID()
+    const { error } = await sb
+      .schema('facility')
+      .from('household_members')
+      .update({ access_token: token })
+      .eq('id', memberId)
+    if (error) {
+      toast('Failed to generate link: ' + error.message, 'error')
+      setGeneratingLink(null)
+      return
+    }
+    const url = `${window.location.origin}/household-access?token=${token}`
+    try {
+      await navigator.clipboard.writeText(url)
+    } catch {
+      const ta = document.createElement('textarea')
+      ta.value = url
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+    }
+    setMembers(prev => prev.map(m => m.id === memberId ? { ...m, access_token: token } : m))
+    toast('Access link copied to clipboard!', 'success')
+    setGeneratingLink(null)
   }
 
   async function deleteMember(id: string) {
@@ -181,6 +212,21 @@ export default function HouseholdPage() {
                     />
                     Notify on emergency
                   </label>
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', flexWrap: 'wrap' }}>
+                  <button
+                    className="btn btn-outline"
+                    style={{ fontSize: '0.8rem', padding: '0.3rem 0.7rem' }}
+                    disabled={generatingLink === m.id}
+                    onClick={() => generateLink(m.id)}
+                  >
+                    {generatingLink === m.id ? 'Generating…' : m.access_token ? 'Regenerate access link' : 'Generate access link'}
+                  </button>
+                  {m.access_token && (
+                    <span style={{ fontSize: '0.75rem', color: 'var(--muted)' }}>
+                      Link active — share with {m.display_name}
+                    </span>
+                  )}
                 </div>
               </div>
             ))}

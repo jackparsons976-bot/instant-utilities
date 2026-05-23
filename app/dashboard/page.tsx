@@ -176,15 +176,30 @@ export default function DashboardPage() {
   const [briefError, setBriefError] = useState<string | null>(null)
   const [isOnline, setIsOnline] = useState(true)
   const [cachedAt, setCachedAt] = useState<number | null>(null)
+  const [allClearAt, setAllClearAt] = useState<number | null>(null)
 
   const cleanupRef = useRef<(() => void) | null>(null)
   const mapAreaRef = useRef<HTMLDivElement>(null)
+  const prevIncidentRef = useRef<Incident | null>(null)
 
   // ── Auto-fade timer — re-render every 60s so isOld threshold triggers ──
   useEffect(() => {
     const id = setInterval(() => setNow(Date.now()), 60_000)
     return () => clearInterval(id)
   }, [])
+
+  // ── All-clear: detect incident resolving, show banner for 30s ──
+  useEffect(() => {
+    const current = incidents[0] ?? null
+    const prev = prevIncidentRef.current
+    if (prev && !current) {
+      setAllClearAt(Date.now())
+      const timer = setTimeout(() => setAllClearAt(null), 30_000)
+      prevIncidentRef.current = null
+      return () => clearTimeout(timer)
+    }
+    prevIncidentRef.current = current
+  }, [incidents])
 
   // ── Online / offline tracking ──
   useEffect(() => {
@@ -572,6 +587,33 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {/* Resident incident banner — links to evacuation guidance */}
+          {activeIncident && !isManager && (
+            <a href="/dashboard/evacuate" style={{
+              background: '#dc2626', color: '#fff', textDecoration: 'none',
+              padding: '0.5rem 1rem', fontSize: '0.875rem', fontWeight: 600,
+              display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0,
+              borderBottom: '1px solid rgba(0,0,0,0.15)',
+            }}>
+              <span>EMERGENCY — {activeIncident.title}</span>
+              <span style={{ marginLeft: 'auto', fontWeight: 400, fontSize: '0.8rem', opacity: 0.9 }}>
+                Evacuation guidance →
+              </span>
+            </a>
+          )}
+
+          {/* All-clear banner — shown for 30s after incident resolves */}
+          {allClearAt && !activeIncident && (
+            <div style={{
+              background: '#16a34a', color: '#fff',
+              padding: '0.5rem 1rem', fontSize: '0.875rem', fontWeight: 600,
+              display: 'flex', alignItems: 'center', gap: '0.5rem', flexShrink: 0,
+              borderBottom: '1px solid rgba(0,0,0,0.15)',
+            }}>
+              All clear — incident resolved. You may return to normal activity.
+            </div>
+          )}
+
           {/* Map area */}
           <div
             ref={mapAreaRef}
@@ -605,6 +647,16 @@ export default function DashboardPage() {
                   )}
                 </div>
               </div>
+            )}
+
+            {/* Incident zone overlay for residents — coloured tint instead of user dots */}
+            {activeIncident && !isManager && (
+              <div style={{
+                position: 'absolute', inset: 0, pointerEvents: 'none',
+                background: 'rgba(220,38,38,0.07)',
+                border: '2px solid rgba(220,38,38,0.25)',
+                borderRadius: '2px',
+              }} />
             )}
 
             {/* SVG overlay for routes and hazard icons */}
@@ -822,11 +874,12 @@ export default function DashboardPage() {
 
             {/* Emergency banner */}
             {activeIncident && (
-              <div style={{
+              <a href={!isManager ? '/dashboard/evacuate' : undefined} style={{
                 position: 'absolute', bottom: 0, left: 0, right: 0,
                 background: 'rgba(220,38,38,0.92)', color: '#fff',
                 padding: '0.6rem 1rem', fontSize: '0.875rem', fontWeight: 600,
                 display: 'flex', alignItems: 'center', gap: '0.5rem',
+                textDecoration: 'none', cursor: !isManager ? 'pointer' : 'default',
               }}>
                 <span>🆘</span>
                 <span>{activeIncident.title}</span>
@@ -834,7 +887,10 @@ export default function DashboardPage() {
                   — {severityLabel(activeIncident.severity)} severity
                   {evacuationRoute ? ` · ${evacuationRoute.message ?? 'Follow green route to exit'}` : ''}
                 </span>
-              </div>
+                {!isManager && (
+                  <span style={{ marginLeft: 'auto', fontSize: '0.8rem' }}>Tap for guidance →</span>
+                )}
+              </a>
             )}
           </div>
 
