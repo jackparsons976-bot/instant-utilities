@@ -21,7 +21,10 @@ export default function HomePage() {
       <nav className="nav">
         <span className="nav-logo">Instant Utilities</span>
         <div className="nav-links">
-          <Link href="/login" className="btn btn-outline" style={{ padding: '0.4rem 0.9rem' }}>
+          <Link href="/signup" className="btn btn-outline" style={{ padding: '0.4rem 0.9rem' }}>
+            Create account
+          </Link>
+          <Link href="/login" className="btn btn-primary" style={{ padding: '0.4rem 0.9rem' }}>
             Sign in
           </Link>
         </div>
@@ -42,12 +45,12 @@ export default function HomePage() {
         </p>
 
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
-          <Link href="/login" className="btn btn-primary" style={{ padding: '0.65rem 1.5rem', fontSize: '1rem' }}>
-            Get started
+          <Link href="/signup" className="btn btn-primary" style={{ padding: '0.65rem 1.5rem', fontSize: '1rem' }}>
+            Get started free
           </Link>
-          <a href="#features" className="btn btn-outline" style={{ padding: '0.65rem 1.5rem', fontSize: '1rem' }}>
-            Learn more
-          </a>
+          <Link href="/login" className="btn btn-outline" style={{ padding: '0.65rem 1.5rem', fontSize: '1rem' }}>
+            Sign in
+          </Link>
         </div>
       </main>
 
@@ -59,7 +62,13 @@ export default function HomePage() {
           </h2>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: '1.5rem' }}>
             {FEATURES.map(f => (
-              <div key={f.title} className="card">
+              <div
+                key={f.title}
+                className="card"
+                style={{ transition: 'box-shadow 0.15s' }}
+                onMouseEnter={e => (e.currentTarget.style.boxShadow = '0 4px 12px rgba(0,0,0,0.08)')}
+                onMouseLeave={e => (e.currentTarget.style.boxShadow = '')}
+              >
                 <div style={{ fontSize: '1.75rem', marginBottom: '0.75rem' }}>{f.icon}</div>
                 <h3 style={{ fontWeight: 600, marginBottom: '0.4rem' }}>{f.title}</h3>
                 <p style={{ fontSize: '0.875rem', color: 'var(--muted)', lineHeight: 1.6 }}>{f.desc}</p>
@@ -74,9 +83,10 @@ export default function HomePage() {
         <div style={{ marginBottom: '0.4rem' }}>
           © {new Date().getFullYear()} Instant Utilities. All rights reserved.
         </div>
-        <div style={{ display: 'flex', justifyContent: 'center', gap: '1.25rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'center', gap: '1.25rem', flexWrap: 'wrap' }}>
           <Link href="/privacy" style={{ color: 'var(--muted)' }}>Privacy Policy</Link>
           <Link href="/terms" style={{ color: 'var(--muted)' }}>Terms of Service</Link>
+          <a href="mailto:support@instant-utilities.com" style={{ color: 'var(--muted)' }}>Contact Support</a>
         </div>
       </footer>
     </div>
