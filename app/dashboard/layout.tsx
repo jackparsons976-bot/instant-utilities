@@ -14,18 +14,10 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
-    if (!loading && !session) router.replace('/login')
+    if (!loading && !session) router.replace('/login?reason=session_expired')
   }, [session, loading, router])
 
-  if (loading) {
-    return (
-      <div className="center">
-        <div className="spinner" />
-      </div>
-    )
-  }
-
-  if (!session) return null
+  if (!loading && !session) return null
 
   const role = jwtClaims?.app_metadata?.platform_role ?? jwtClaims?.platform_role ?? 'resident'
 
@@ -35,9 +27,18 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div className="app-layout">
         <Sidebar role={role} />
         <main className="main-content">
-          <ErrorBoundary>
-            {children}
-          </ErrorBoundary>
+          {loading ? (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+              <div className="skeleton" style={{ height: '32px', width: '40%', borderRadius: '6px' }} />
+              <div className="skeleton" style={{ height: '120px', borderRadius: '8px' }} />
+              <div className="skeleton" style={{ height: '80px', borderRadius: '8px' }} />
+              <div className="skeleton" style={{ height: '80px', borderRadius: '8px' }} />
+            </div>
+          ) : (
+            <ErrorBoundary>
+              {children}
+            </ErrorBoundary>
+          )}
           <footer style={{ marginTop: '3rem', paddingTop: '1rem', borderTop: '1px solid var(--border)', display: 'flex', gap: '1.25rem', fontSize: '0.75rem', color: 'var(--muted)' }}>
             <Link href="/privacy" style={{ color: 'var(--muted)' }}>Privacy Policy</Link>
             <Link href="/terms" style={{ color: 'var(--muted)' }}>Terms of Service</Link>

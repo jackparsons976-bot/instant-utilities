@@ -1,14 +1,16 @@
 'use client'
 
-import { useState, FormEvent, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, FormEvent, useEffect, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 import Link from 'next/link'
 import { useAuth } from '@/providers/AuthProvider'
 import { getSupabaseClient } from '@/lib/supabase/client'
 
-export default function LoginPage() {
+function LoginPageInner() {
   const { session, loading } = useAuth()
   const router = useRouter()
+  const searchParams = useSearchParams()
+  const reason = searchParams.get('reason')
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [error, setError]       = useState('')
@@ -61,6 +63,12 @@ export default function LoginPage() {
   return (
     <div className="center">
       <div style={{ width: '100%', maxWidth: '380px', padding: '0 1.25rem' }}>
+
+        {reason === 'session_expired' && (
+          <div className="alert alert-warning" style={{ marginBottom: '1.5rem' }}>
+            Your session expired — please sign in again.
+          </div>
+        )}
 
         {/* PWA install prompt — shown once on mobile */}
         {showInstallBanner && (
@@ -130,5 +138,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense>
+      <LoginPageInner />
+    </Suspense>
   )
 }
