@@ -128,9 +128,11 @@ function LoginPageInner() {
           </button>
         </form>
 
-        <p style={{ marginTop: '1.5rem', textAlign: 'center', fontSize: '0.8rem', color: 'var(--muted)' }}>
-          Demo: admin@harbourview.dev / SeedPassword123!
-        </p>
+        {process.env.NEXT_PUBLIC_SHOW_DEMO_HINT === 'true' && (
+          <p style={{ marginTop: '1.5rem', textAlign: 'center', fontSize: '0.8rem', color: 'var(--muted)' }}>
+            Demo: admin@harbourview.dev / SeedPassword123!
+          </p>
+        )}
 
         <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'center', gap: '1.25rem', fontSize: '0.75rem' }}>
           <Link href="/privacy" style={{ color: 'var(--muted)' }}>Privacy Policy</Link>

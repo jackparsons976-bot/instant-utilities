@@ -40,24 +40,31 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const supabase = getSupabaseClient()
 
     ;(async () => {
+      let cancelled = false
+      const timeout = new Promise<void>(resolve => setTimeout(() => {
+        cancelled = true
+        resolve()
+      }, 5000))
+
       try {
-        const timeout = new Promise<void>(resolve => setTimeout(resolve, 5000))
         await Promise.race([
           (async () => {
             const { data } = await supabase.auth.getSession()
+            if (cancelled) return
             if (data.session) {
               // Force a fresh JWT so hook claims are always current
               const { data: refreshed } = await supabase.auth.refreshSession()
-              applySession(refreshed.session)
+              if (!cancelled) applySession(refreshed.session)
             } else {
-              applySession(null)
+              if (!cancelled) applySession(null)
             }
           })(),
-          timeout.then(() => { applySession(null) }),
+          timeout,
         ])
       } catch {
-        applySession(null)
+        if (!cancelled) applySession(null)
       }
+      if (cancelled) applySession(null)
       setLoading(false)
     })()
 
