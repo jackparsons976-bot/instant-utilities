@@ -149,7 +149,7 @@ export default function MaintenancePage() {
           <p>{filterStatus !== 'all' || filterPriority !== 'all' ? 'No requests match the current filters.' : 'Submit your first maintenance request using the button above.'}</p>
         </div>
       ) : (
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="card" style={{ padding: 0, overflow: 'hidden', overflowX: 'auto' }}>
           <table className="table">
             <thead>
               <tr><th>Title</th><th>Priority</th><th>Status</th><th>Submitted</th>{canManageResidents && <th>Actions</th>}</tr>

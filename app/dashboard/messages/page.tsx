@@ -40,11 +40,19 @@ export default function MessagesPage() {
   const [newSubject, setNewSubject] = useState('')
   const [creatingThread, setCreatingThread] = useState(false)
   const [reconnectKey, setReconnectKey] = useState(0)
+  const [isMobile, setIsMobile] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
   const channelRef = useRef<any>(null)
   const reconnectAttempts = useRef(0)
 
   const facilityId = jwtClaims?.app_metadata?.active_facility_ids?.[0] ?? jwtClaims?.active_facility_ids?.[0]
+
+  useEffect(() => {
+    const check = () => setIsMobile(window.innerWidth < 768)
+    check()
+    window.addEventListener('resize', check)
+    return () => window.removeEventListener('resize', check)
+  }, [])
 
   useEffect(() => {
     if (!facilityId || !session) { setLoading(false); return }
@@ -191,9 +199,9 @@ export default function MessagesPage() {
         </form>
       )}
 
-      <div style={{ display: 'grid', gridTemplateColumns: activeThread ? '280px 1fr' : '1fr', gap: '1rem', minHeight: '480px' }}>
-        {/* Thread list */}
-        <div className="card" style={{ padding: 0, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
+      <div style={{ display: 'grid', gridTemplateColumns: (activeThread && !isMobile) ? '280px 1fr' : '1fr', gap: '1rem', minHeight: '480px' }}>
+        {/* Thread list — hidden on mobile when a thread is open */}
+        <div className="card" style={{ padding: 0, overflow: 'hidden', display: (activeThread && isMobile) ? 'none' : 'flex', flexDirection: 'column' }}>
           <div style={{ padding: '0.75rem 1rem', borderBottom: '1px solid var(--border)', fontWeight: 600, fontSize: '0.875rem' }}>
             Threads {threads.length > 0 && <span style={{ color: 'var(--muted)', fontWeight: 400 }}>({threads.length})</span>}
           </div>
@@ -242,6 +250,10 @@ export default function MessagesPage() {
                   {activeThread.thread_type}
                 </span>
               </div>
+              {isMobile && (
+                <button className="btn btn-ghost" style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem', color: 'var(--muted)' }}
+                  onClick={() => setActiveThread(null)}>← Back</button>
+              )}
               <button className="btn btn-ghost" style={{ fontSize: '0.8rem', padding: '0.25rem 0.5rem', color: 'var(--muted)' }}
                 onClick={() => setActiveThread(null)}>✕</button>
             </div>

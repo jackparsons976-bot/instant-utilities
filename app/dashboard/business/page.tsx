@@ -69,7 +69,13 @@ export default function BusinessProfilePage() {
     toast(`Now ${newStatus === 'active' ? 'available' : 'unavailable'}.`, 'success')
   }
 
-  if (loading) return <div className="center"><div className="spinner" /></div>
+  if (loading) return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <div className="skeleton" style={{ height: '28px', width: '35%', borderRadius: '6px' }} />
+      <div className="skeleton" style={{ height: '100px', borderRadius: '8px' }} />
+      <div className="skeleton" style={{ height: '100px', borderRadius: '8px' }} />
+    </div>
+  )
   if (!profile) return (
     <div className="placeholder-section">
       <h3>No business profile</h3>

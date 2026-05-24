@@ -58,7 +58,13 @@ export default function SettingsPage() {
     toast('Display name updated.', 'success')
   }
 
-  if (loading) return <div className="center"><div className="spinner" /></div>
+  if (loading) return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+      <div className="skeleton" style={{ height: '28px', width: '35%', borderRadius: '6px' }} />
+      <div className="skeleton" style={{ height: '100px', borderRadius: '8px' }} />
+      <div className="skeleton" style={{ height: '100px', borderRadius: '8px' }} />
+    </div>
+  )
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>

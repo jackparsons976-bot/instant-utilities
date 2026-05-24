@@ -353,7 +353,9 @@ export default function EmergencyPage() {
         )}
 
         {loading ? (
-          <p style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>Loading…</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {[1,2,3].map(i => <div key={i} className="skeleton" style={{ height: '44px', borderRadius: '6px' }} />)}
+          </div>
         ) : hazards.length === 0 ? (
           <div className="placeholder-section">
             <h3>All clear</h3>
@@ -425,7 +427,9 @@ export default function EmergencyPage() {
           {activeIncidents.length > 0 && <span className="badge badge-red" style={{ marginLeft: '0.5rem' }}>{activeIncidents.length} active</span>}
         </h2>
         {loading ? (
-          <p style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>Loading…</p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {[1,2,3].map(i => <div key={i} className="skeleton" style={{ height: '44px', borderRadius: '6px' }} />)}
+          </div>
         ) : incidents.length === 0 ? (
           <div className="placeholder-section">
             <h3>All clear — no incidents</h3>

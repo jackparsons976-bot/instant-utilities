@@ -157,7 +157,7 @@ export default function ResidentsPage() {
           <p>{search ? 'No members match your search.' : 'No active members in this facility.'}</p>
         </div>
       ) : (
-        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+        <div className="card" style={{ padding: 0, overflow: 'hidden', overflowX: 'auto' }}>
           <table className="table">
             <thead>
               <tr><th>User</th><th>Role</th><th>Unit</th><th>Joined</th>{canManageResidents && <th></th>}</tr>
