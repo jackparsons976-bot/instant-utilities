@@ -50,6 +50,7 @@ export default function EmergencyPage() {
   const [showHazardForm, setShowHazardForm] = useState(false)
   const [hazardType, setHazardType] = useState('fire')
   const [hazardFloor, setHazardFloor] = useState('')
+  const [hazardFloorError, setHazardFloorError] = useState('')
   const [hazardNotes, setHazardNotes] = useState('')
   const channelRef = useRef<any>(null)
   const reconnectAttempts = useRef(0)
@@ -191,6 +192,11 @@ export default function EmergencyPage() {
 
   async function addHazard(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault()
+    if (!hazardFloor.trim()) {
+      setHazardFloorError('Floor / location is required')
+      return
+    }
+    setHazardFloorError('')
     if (!session || !facilityId) return
     const sb = getSupabaseClient()
     const { error } = await sb.schema('emergency').from('hazard_markers').insert({
@@ -204,7 +210,7 @@ export default function EmergencyPage() {
     if (error) { toast('Failed to add hazard: ' + error.message, 'error'); return }
     toast('Hazard marker added.', 'success')
     setShowHazardForm(false)
-    setHazardType('fire'); setHazardFloor(''); setHazardNotes('')
+    setHazardType('fire'); setHazardFloor(''); setHazardFloorError(''); setHazardNotes('')
   }
 
   async function resolveHazard(id: string) {
@@ -326,8 +332,14 @@ export default function EmergencyPage() {
                   </select>
                 </div>
                 <div className="field">
-                  <label className="label">Floor / location</label>
-                  <input className="input" placeholder="e.g. Floor 3, Corridor B" value={hazardFloor} onChange={e => setHazardFloor(e.target.value)} />
+                  <label className="label">Floor / location *</label>
+                  <input
+                    className="input"
+                    placeholder="e.g. Floor 3, Corridor B"
+                    value={hazardFloor}
+                    onChange={e => { setHazardFloor(e.target.value); if (e.target.value.trim()) setHazardFloorError('') }}
+                  />
+                  {hazardFloorError && <p className="error-msg" role="alert">{hazardFloorError}</p>}
                 </div>
               </div>
               <div className="field">
