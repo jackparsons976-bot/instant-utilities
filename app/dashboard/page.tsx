@@ -865,7 +865,7 @@ export default function DashboardPage() {
               {!gpsCalibrated && (
                 <span style={{
                   background: 'rgba(217,119,6,0.85)', color: '#fff', borderRadius: '20px',
-                  padding: '0.25rem 0.7rem', fontSize: '0.75rem',
+                  padding: '0.25rem 0.7rem', fontSize: '0.75rem', whiteSpace: 'nowrap',
                 }}>
                   GPS not calibrated
                 </span>
