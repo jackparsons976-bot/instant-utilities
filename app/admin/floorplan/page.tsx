@@ -17,7 +17,7 @@ interface Floor {
 }
 
 export default function FloorPlanAdminPage() {
-  const { session, loading: authLoading } = useAuth()
+  const { session, jwtClaims, loading: authLoading } = useAuth()
   const { toast } = useToast()
   const router = useRouter()
 
@@ -28,8 +28,19 @@ export default function FloorPlanAdminPage() {
   const [uploading, setUploading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [dragOver, setDragOver] = useState(false)
   const fileRef = useRef<HTMLInputElement>(null)
   const mapRef = useRef<HTMLDivElement>(null)
+
+  // Selected file state — set on pick/drop, cleared after upload
+  const [selectedFile, setSelectedFile] = useState<File | null>(null)
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null)
+
+  // Add floor form
+  const [showAddFloor, setShowAddFloor] = useState(false)
+  const [newFloorLevel, setNewFloorLevel] = useState('')
+  const [newFloorName, setNewFloorName] = useState('')
+  const [addingFloor, setAddingFloor] = useState(false)
 
   const [nodes, setNodes] = useState<{id?:string,label:string,node_type:string,zone:string|null,x_percent:number,y_percent:number,dirty:boolean}[]>([])
   const [savingNodes, setSavingNodes] = useState(false)
@@ -43,7 +54,7 @@ export default function FloorPlanAdminPage() {
     building_name: '', level_label: '',
   })
 
-  const role = session?.user?.app_metadata?.platform_role as string
+  const role = jwtClaims?.app_metadata?.platform_role ?? jwtClaims?.platform_role
 
   useEffect(() => {
     if (!authLoading && (!session || role !== 'platform_admin')) {
@@ -51,7 +62,6 @@ export default function FloorPlanAdminPage() {
     }
   }, [session, authLoading, role, router])
 
-  // Load facilities
   useEffect(() => {
     if (!session || role !== 'platform_admin') return
     getSupabaseClient().schema('facility').from('facilities')
@@ -64,7 +74,6 @@ export default function FloorPlanAdminPage() {
       })
   }, [session?.user?.id, role])
 
-  // Load floors when facility changes
   useEffect(() => {
     if (!selectedFacilityId) { setFloors([]); setSelectedFloorId(''); return }
     getSupabaseClient().schema('facility').from('floors')
@@ -78,7 +87,6 @@ export default function FloorPlanAdminPage() {
       })
   }, [selectedFacilityId])
 
-  // Pre-fill bounds when floor changes
   useEffect(() => {
     const floor = floors.find(f => f.id === selectedFloorId)
     if (!floor) return
@@ -90,9 +98,11 @@ export default function FloorPlanAdminPage() {
       building_name: floor.building_name ?? '',
       level_label: floor.level_label ?? '',
     })
+    // Clear pending file when switching floors
+    setSelectedFile(null)
+    setPreviewUrl(null)
   }, [selectedFloorId, floors])
 
-  // Load QR nodes when floor changes
   useEffect(() => {
     if (!selectedFloorId || !selectedFacilityId) return
     ;(getSupabaseClient() as any).schema('qr').from('nodes')
@@ -101,23 +111,43 @@ export default function FloorPlanAdminPage() {
       .then(({ data }: any) => setNodes((data ?? []).map((n: any) => ({...n, dirty: false}))))
   }, [selectedFloorId, selectedFacilityId])
 
+  function applyFile(file: File) {
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+    if (!['png', 'jpg', 'jpeg', 'svg', 'webp'].includes(ext)) {
+      toast('Only PNG, JPG, SVG or WebP files are supported.', 'error')
+      return
+    }
+    setSelectedFile(file)
+    if (previewUrl) URL.revokeObjectURL(previewUrl)
+    setPreviewUrl(URL.createObjectURL(file))
+  }
+
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0]
+    if (file) applyFile(file)
+    // reset input so the same file can be re-selected if needed
+    e.target.value = ''
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault()
+    setDragOver(false)
+    const file = e.dataTransfer.files[0]
+    if (file) applyFile(file)
+  }
+
   async function uploadFloorPlan() {
-    if (!fileRef.current?.files?.[0] || !selectedFloorId || !selectedFacilityId) {
+    if (!selectedFile || !selectedFloorId || !selectedFacilityId) {
       toast('Select a facility, floor, and image file.', 'error'); return
     }
-    const file = fileRef.current.files[0]
-    const ext = file.name.split('.').pop()?.toLowerCase() ?? 'jpg'
-    if (!['png', 'jpg', 'jpeg', 'svg', 'webp'].includes(ext)) {
-      toast('Only PNG, JPG, SVG or WebP files are supported.', 'error'); return
-    }
-
     setUploading(true)
     const sb = getSupabaseClient()
+    const ext = selectedFile.name.split('.').pop()?.toLowerCase() ?? 'jpg'
     const path = `${selectedFacilityId}/${selectedFloorId}/plan.${ext}`
 
     const { error: uploadErr } = await sb.storage
       .from('floor-plans')
-      .upload(path, file, { upsert: true, contentType: file.type })
+      .upload(path, selectedFile, { upsert: true, contentType: selectedFile.type })
 
     if (uploadErr) {
       toast('Upload failed: ' + uploadErr.message, 'error')
@@ -133,11 +163,32 @@ export default function FloorPlanAdminPage() {
     if (updateErr) {
       toast('DB update failed: ' + updateErr.message, 'error')
     } else {
-      toast('Floor plan uploaded successfully.', 'success')
+      toast('Floor plan uploaded.', 'success')
       setFloors(prev => prev.map(f => f.id === selectedFloorId ? { ...f, image_url: publicUrl } : f))
-      if (fileRef.current) fileRef.current.value = ''
+      setSelectedFile(null)
+      setPreviewUrl(null)
     }
     setUploading(false)
+  }
+
+  async function handleAddFloor(e: React.FormEvent) {
+    e.preventDefault()
+    if (!selectedFacilityId || !newFloorLevel || !newFloorName) return
+    setAddingFloor(true)
+    const { data, error } = await getSupabaseClient().schema('facility').from('floors').insert({
+      facility_id: selectedFacilityId,
+      level: parseInt(newFloorLevel),
+      name: newFloorName,
+      level_label: newFloorName,
+    }).select('id,facility_id,level,name,image_url,floor_plan_url,geo_lat_min,geo_lat_max,geo_lng_min,geo_lng_max,building_name,level_label').single()
+    if (error) { toast('Failed to add floor: ' + error.message, 'error'); setAddingFloor(false); return }
+    const newFloor = data as Floor
+    setFloors(prev => [...prev, newFloor].sort((a, b) => a.level - b.level))
+    setSelectedFloorId(newFloor.id)
+    setNewFloorLevel(''); setNewFloorName('')
+    setShowAddFloor(false)
+    setAddingFloor(false)
+    toast('Floor added.', 'success')
   }
 
   async function saveGeoBounds() {
@@ -200,6 +251,7 @@ export default function FloorPlanAdminPage() {
     }
     setNodes(prev => prev.map(n => ({...n,dirty:false})))
     setSavingNodes(false)
+    toast('Nodes saved.', 'success')
   }
 
   if (authLoading || loading) return <div className="center"><div className="spinner" /></div>
@@ -212,6 +264,7 @@ export default function FloorPlanAdminPage() {
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
       <AppNav />
       <div style={{ padding: '2rem', maxWidth: '820px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+
         <div>
           <div style={{ marginBottom: '0.5rem' }}>
             <a href="/admin" style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>← Admin</a>
@@ -220,17 +273,16 @@ export default function FloorPlanAdminPage() {
           <p style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>Upload floor plan images and configure GPS geo-bounds per floor.</p>
         </div>
 
-        {/* Selectors */}
+        {/* Step 1: Select building & floor */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Select building & floor</div>
+          <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Step 1 — Select building & floor</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
             <div>
               <label style={{ fontSize: '0.8rem', color: 'var(--muted)', display: 'block', marginBottom: '0.4rem' }}>Building</label>
               <select
-                className="btn btn-outline"
+                className="input"
                 value={selectedFacilityId}
                 onChange={e => setSelectedFacilityId(e.target.value)}
-                style={{ width: '100%', textAlign: 'left' }}
               >
                 {facilities.map(f => <option key={f.id} value={f.id}>{f.name}</option>)}
               </select>
@@ -238,42 +290,129 @@ export default function FloorPlanAdminPage() {
             <div>
               <label style={{ fontSize: '0.8rem', color: 'var(--muted)', display: 'block', marginBottom: '0.4rem' }}>Floor</label>
               <select
-                className="btn btn-outline"
+                className="input"
                 value={selectedFloorId}
                 onChange={e => setSelectedFloorId(e.target.value)}
-                style={{ width: '100%', textAlign: 'left' }}
                 disabled={floors.length === 0}
               >
-                {floors.map(f => <option key={f.id} value={f.id}>{f.level_label ?? f.name} (Level {f.level})</option>)}
+                {floors.length === 0
+                  ? <option value="">No floors yet</option>
+                  : floors.map(f => <option key={f.id} value={f.id}>{f.level_label ?? f.name} (Level {f.level})</option>)
+                }
               </select>
             </div>
           </div>
+
+          {/* Add floor */}
+          {!showAddFloor ? (
+            <div>
+              <button
+                className="btn btn-outline"
+                style={{ fontSize: '0.8rem', padding: '0.3rem 0.75rem' }}
+                onClick={() => setShowAddFloor(true)}
+                disabled={!selectedFacilityId}
+              >
+                + Add floor
+              </button>
+            </div>
+          ) : (
+            <form onSubmit={handleAddFloor} style={{ display: 'flex', gap: '0.75rem', alignItems: 'flex-end', flexWrap: 'wrap', padding: '0.75rem', background: '#f9fafb', borderRadius: 'var(--radius)' }}>
+              <div className="field" style={{ width: '90px' }}>
+                <label className="label">Level #</label>
+                <input className="input" type="number" placeholder="1" value={newFloorLevel} onChange={e => setNewFloorLevel(e.target.value)} required />
+              </div>
+              <div className="field" style={{ flex: 1, minWidth: '160px' }}>
+                <label className="label">Floor name</label>
+                <input className="input" placeholder="e.g. Ground Floor" value={newFloorName} onChange={e => setNewFloorName(e.target.value)} required />
+              </div>
+              <button type="submit" className="btn btn-primary" disabled={addingFloor}>
+                {addingFloor ? 'Adding…' : 'Add'}
+              </button>
+              <button type="button" className="btn btn-ghost" onClick={() => setShowAddFloor(false)}>Cancel</button>
+            </form>
+          )}
         </div>
 
-        {/* Floor plan upload */}
+        {/* Step 2: Upload floor plan */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Floor plan image</div>
-          {currentImageUrl && (
+          <div style={{ fontWeight: 600, fontSize: '0.95rem' }}>Step 2 — Add floor plan</div>
+
+          {/* Current image */}
+          {currentImageUrl && !selectedFile && (
             <div>
-              <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '0.5rem' }}>Current image</div>
-              <img src={currentImageUrl} alt="Current floor plan" style={{ maxWidth: '100%', maxHeight: '200px', objectFit: 'contain', border: '1px solid var(--border)', borderRadius: '6px' }} />
+              <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '0.5rem' }}>Current floor plan</div>
+              <img src={currentImageUrl} alt="Current floor plan" style={{ maxWidth: '100%', maxHeight: '180px', objectFit: 'contain', border: '1px solid var(--border)', borderRadius: '6px' }} />
             </div>
           )}
-          <div>
-            <label style={{ fontSize: '0.8rem', color: 'var(--muted)', display: 'block', marginBottom: '0.4rem' }}>
-              Upload new image (PNG, JPG, SVG — no PDF)
-            </label>
-            <input ref={fileRef} type="file" accept=".png,.jpg,.jpeg,.svg,.webp,image/*" style={{ fontSize: '0.875rem', marginBottom: '0.75rem', display: 'block' }} />
-            <button className="btn btn-primary" onClick={uploadFloorPlan} disabled={uploading || !selectedFloorId}>
-              {uploading ? 'Uploading…' : 'Upload floor plan'}
-            </button>
-          </div>
+
+          {/* File preview */}
+          {selectedFile && previewUrl && (
+            <div>
+              <div style={{ fontSize: '0.8rem', color: 'var(--muted)', marginBottom: '0.5rem' }}>
+                Selected: <strong>{selectedFile.name}</strong> ({(selectedFile.size / 1024).toFixed(0)} KB)
+              </div>
+              <img src={previewUrl} alt="Floor plan preview" style={{ maxWidth: '100%', maxHeight: '220px', objectFit: 'contain', border: '1px solid var(--border)', borderRadius: '6px' }} />
+            </div>
+          )}
+
+          {/* Hidden file input — triggered programmatically */}
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".png,.jpg,.jpeg,.svg,.webp,image/*"
+            onChange={handleFileChange}
+            style={{ display: 'none' }}
+          />
+
+          {/* Upload zone */}
+          {!selectedFile ? (
+            <div
+              onClick={() => selectedFloorId && fileRef.current?.click()}
+              onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+              onDragLeave={() => setDragOver(false)}
+              onDrop={handleDrop}
+              style={{
+                border: `2px dashed ${dragOver ? 'var(--primary)' : 'var(--border)'}`,
+                borderRadius: 'var(--radius)',
+                padding: '2.5rem 1.5rem',
+                textAlign: 'center',
+                cursor: selectedFloorId ? 'pointer' : 'not-allowed',
+                background: dragOver ? '#f0f9ff' : selectedFloorId ? '#fafafa' : '#f9fafb',
+                transition: 'border-color 0.15s, background 0.15s',
+                opacity: selectedFloorId ? 1 : 0.5,
+              }}
+            >
+              <div style={{ fontSize: '2rem', marginBottom: '0.5rem', lineHeight: 1 }}>🖼️</div>
+              <div style={{ fontWeight: 600, marginBottom: '0.25rem', fontSize: '0.95rem' }}>
+                {selectedFloorId ? 'Add floor plan' : 'Select a floor first'}
+              </div>
+              {selectedFloorId && (
+                <div style={{ fontSize: '0.8rem', color: 'var(--muted)' }}>
+                  Click to browse your device or drag & drop here<br />
+                  PNG, JPG, SVG, WebP supported
+                </div>
+              )}
+            </div>
+          ) : (
+            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+              <button className="btn btn-primary" onClick={uploadFloorPlan} disabled={uploading}>
+                {uploading ? 'Uploading…' : 'Upload floor plan'}
+              </button>
+              <button
+                className="btn btn-outline"
+                onClick={() => { setSelectedFile(null); setPreviewUrl(null) }}
+                disabled={uploading}
+              >
+                Choose different file
+              </button>
+            </div>
+          )}
         </div>
 
-        {/* Geo bounds */}
+        {/* Step 3: GPS geo-bounds */}
         <div className="card" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
           <div>
-            <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem' }}>GPS geo-bounds</div>
+            <div style={{ fontWeight: 600, fontSize: '0.95rem', marginBottom: '0.25rem' }}>Step 3 — GPS geo-bounds</div>
             <p style={{ fontSize: '0.8rem', color: 'var(--muted)', lineHeight: 1.6 }}>
               Enter the GPS coordinates of the four corners of this floor. Use{' '}
               <strong>Google Maps</strong> to find them — right-click any point and copy the coordinates.
@@ -293,7 +432,7 @@ export default function FloorPlanAdminPage() {
                   type="number" step="0.0000001" placeholder="e.g. -33.8700"
                   value={geoBounds[key as keyof typeof geoBounds]}
                   onChange={e => setGeoBounds(prev => ({ ...prev, [key]: e.target.value }))}
-                  style={{ width: '100%', padding: '0.45rem 0.65rem', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: '0.875rem', background: '#fff', color: 'var(--fg)' }}
+                  className="input"
                 />
               </div>
             ))}
@@ -305,7 +444,7 @@ export default function FloorPlanAdminPage() {
                 type="text" placeholder="e.g. Harbourview"
                 value={geoBounds.building_name}
                 onChange={e => setGeoBounds(prev => ({ ...prev, building_name: e.target.value }))}
-                style={{ width: '100%', padding: '0.45rem 0.65rem', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: '0.875rem', background: '#fff', color: 'var(--fg)' }}
+                className="input"
               />
             </div>
             <div>
@@ -314,7 +453,7 @@ export default function FloorPlanAdminPage() {
                 type="text" placeholder="e.g. Level 4"
                 value={geoBounds.level_label}
                 onChange={e => setGeoBounds(prev => ({ ...prev, level_label: e.target.value }))}
-                style={{ width: '100%', padding: '0.45rem 0.65rem', border: '1px solid var(--border)', borderRadius: 'var(--radius)', fontSize: '0.875rem', background: '#fff', color: 'var(--fg)' }}
+                className="input"
               />
             </div>
           </div>
@@ -325,13 +464,12 @@ export default function FloorPlanAdminPage() {
           </div>
         </div>
 
-        {/* Step 3: Place QR nodes */}
+        {/* Step 4: Place QR nodes */}
         {selectedFloorId && (activeFloor?.image_url || activeFloor?.floor_plan_url) && (
           <div className="card" style={{padding:'1.25rem'}}>
-            <h3 style={{fontWeight:600,marginBottom:'0.75rem'}}>Step 3 — Place QR Nodes</h3>
+            <h3 style={{fontWeight:600,marginBottom:'0.75rem'}}>Step 4 — Place QR Nodes</h3>
             <p style={{fontSize:'0.8rem',color:'var(--muted)',marginBottom:'0.75rem'}}>Click on the floor plan to add a node. Drag nodes to reposition.</p>
 
-            {/* Floor plan with node overlay */}
             <div
               ref={mapRef}
               style={{position:'relative',display:'inline-block',cursor:'crosshair',userSelect:'none',maxWidth:'100%'}}
@@ -360,7 +498,6 @@ export default function FloorPlanAdminPage() {
               ))}
             </div>
 
-            {/* Add node form */}
             {addingNode && (
               <div style={{marginTop:'0.75rem',padding:'0.75rem',background:'#f9fafb',borderRadius:'6px',display:'flex',gap:'0.5rem',flexWrap:'wrap',alignItems:'center'}}>
                 <input className="input" placeholder="Label" value={newLabel} onChange={e=>setNewLabel(e.target.value)} style={{width:'140px'}} />
@@ -368,11 +505,10 @@ export default function FloorPlanAdminPage() {
                   {['room','corridor','exit','emergency_exit','stairwell','lift','assembly_point','other'].map(t=><option key={t} value={t}>{t.replace('_',' ')}</option>)}
                 </select>
                 <button className="btn btn-primary" onClick={confirmAddNode} disabled={!newLabel}>Add</button>
-                <button className="btn btn-secondary" onClick={()=>setAddingNode(null)}>Cancel</button>
+                <button className="btn btn-ghost" onClick={()=>setAddingNode(null)}>Cancel</button>
               </div>
             )}
 
-            {/* Node list */}
             {nodes.length > 0 && (
               <div style={{marginTop:'0.75rem'}}>
                 <div style={{fontSize:'0.8rem',color:'var(--muted)',marginBottom:'0.4rem'}}>{nodes.length} node{nodes.length!==1?'s':''}</div>
