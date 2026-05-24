@@ -51,6 +51,8 @@ function LoginPageInner() {
   async function handleSubmit(e: FormEvent) {
     e.preventDefault()
     setError('')
+    if (!email.trim()) { setError('Email is required'); return }
+    if (!password) { setError('Password is required'); return }
     setBusy(true)
     const sb = getSupabaseClient()
     const { error } = await sb.auth.signInWithPassword({ email, password })
@@ -109,14 +111,14 @@ function LoginPageInner() {
           <div className="field">
             <label className="label" htmlFor="email">Email</label>
             <input id="email" type="email" className="input" placeholder="you@example.com"
-              autoComplete="email" required value={email}
+              autoComplete="email" value={email}
               onChange={e => setEmail(e.target.value)} disabled={busy} />
           </div>
 
           <div className="field">
             <label className="label" htmlFor="password">Password</label>
             <input id="password" type="password" className="input" placeholder="••••••••"
-              autoComplete="current-password" required value={password}
+              autoComplete="current-password" value={password}
               onChange={e => setPassword(e.target.value)} disabled={busy} />
           </div>
 
@@ -126,6 +128,11 @@ function LoginPageInner() {
             style={{ width: '100%', justifyContent: 'center', padding: '0.65rem' }}>
             {busy ? 'Signing in…' : 'Sign in'}
           </button>
+
+          <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.8rem', marginTop: '0.25rem' }}>
+            <Link href="/forgot-password" style={{ color: 'var(--muted)' }}>Forgot password?</Link>
+            <Link href="/signup" style={{ color: 'var(--primary)', fontWeight: 500 }}>Create account</Link>
+          </div>
         </form>
 
         {process.env.NEXT_PUBLIC_SHOW_DEMO_HINT === 'true' && (
