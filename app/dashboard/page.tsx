@@ -863,11 +863,14 @@ export default function DashboardPage() {
                 Live · {peopleOnFloor} {peopleOnFloor === 1 ? 'person' : 'people'} on this floor
               </span>
               {!gpsCalibrated && (
-                <span style={{
-                  background: 'rgba(217,119,6,0.85)', color: '#fff', borderRadius: '20px',
-                  padding: '0.25rem 0.7rem', fontSize: '0.75rem', whiteSpace: 'nowrap',
-                }}>
-                  GPS not calibrated
+                <span
+                  title="GPS not calibrated"
+                  style={{
+                    background: 'rgba(217,119,6,0.85)', color: '#fff', borderRadius: '20px',
+                    padding: '0.25rem 0.7rem', fontSize: '0.75rem', whiteSpace: 'nowrap',
+                  }}
+                >
+                  GPS Off
                 </span>
               )}
             </div>

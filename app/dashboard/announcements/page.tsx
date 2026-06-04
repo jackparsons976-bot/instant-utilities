@@ -38,13 +38,15 @@ export default function AnnouncementsPage() {
 
   useEffect(() => {
     if (!facilityId) { setLoading(false); return }
-    getSupabaseClient().schema('facility').from('announcements')
-      .select('id, title, body, published_at, author_id, expires_at')
-      .eq('facility_id', facilityId)
-      .not('published_at', 'is', null)
-      .order('published_at', { ascending: false })
-      .limit(30)
-      .then(({ data }) => { setItems((data ?? []) as Announcement[]); setLoading(false) })
+    Promise.resolve(
+      getSupabaseClient().schema('facility').from('announcements')
+        .select('id, title, body, published_at, author_id, expires_at')
+        .eq('facility_id', facilityId)
+        .not('published_at', 'is', null)
+        .order('published_at', { ascending: false })
+        .limit(30)
+        .then(({ data }) => { setItems((data ?? []) as Announcement[]); setLoading(false) })
+    ).catch(() => setLoading(false))
   }, [facilityId])
 
   async function handleSubmit(e: FormEvent) {

@@ -208,7 +208,7 @@ export default function EmergencyPage() {
       notes: hazardNotes || null,
       is_active: true,
     })
-    if (error) { toast('Failed to add hazard: ' + error.message, 'error'); return }
+    if (error) { toast('Failed to report hazard. Please try again.', 'error'); return }
     toast('Hazard marker added.', 'success')
     setShowHazardForm(false)
     setHazardType('fire'); setHazardFloor(''); setHazardFloorError(''); setHazardNotes('')

@@ -55,9 +55,26 @@ function LoginPageInner() {
     if (!password) { setError('Password is required'); return }
     setBusy(true)
     const sb = getSupabaseClient()
-    const { error } = await sb.auth.signInWithPassword({ email, password })
-    if (error) { setError(error.message); setBusy(false); return }
-    // Navigation handled by the useEffect above once session state commits
+    try {
+      const result = await Promise.race([
+        sb.auth.signInWithPassword({ email, password }),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('timeout')), 10000)
+        ),
+      ])
+      if (result.error) {
+        setError(result.error.message)
+        setBusy(false)
+      }
+      // On success: navigation handled by the useEffect above once session commits
+    } catch (err: any) {
+      setError(
+        err?.message === 'timeout'
+          ? 'Sign in failed — please try again.'
+          : (err?.message ?? 'Sign in failed — please try again.')
+      )
+      setBusy(false)
+    }
   }
 
   if (loading) return <div className="center"><p style={{ color: 'var(--muted)' }}>Loading…</p></div>

@@ -224,17 +224,25 @@ export default function QRPage() {
                             {n.qr_payload}
                           </div>
                           {facilityId && userId && (
-                            <div style={{ alignSelf: 'center' }}>
+                            <div style={{ alignSelf: 'center', display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
                               <button
                                 className="btn btn-outline"
                                 style={{ fontSize: '0.8rem' }}
                                 onClick={async () => {
                                   await setLocationFromQR(userId, facilityId, n)
+                                  setSelectedNode(n)
                                   await loadEmergencyContext(n)
                                   toast(`Location updated — pinned to ${n.label}`, 'success')
                                 }}
                               >
                                 📍 Pin my location here
+                              </button>
+                              <button
+                                className="btn btn-outline"
+                                style={{ fontSize: '0.8rem' }}
+                                onClick={() => { setSelectedNode(n); loadEmergencyContext(n) }}
+                              >
+                                🔍 View node context
                               </button>
                             </div>
                           )}
@@ -293,10 +301,26 @@ export default function QRPage() {
                 Call 000
               </a>
               <button
-                onClick={() => setEmergencyMode(false)}
+                onClick={async () => {
+                  // Send SOS with pre-filled node location context
+                  try {
+                    const res = await fetch('/api/sos', {
+                      method: 'POST',
+                      headers: {
+                        'Content-Type': 'application/json',
+                        Authorization: `Bearer ${(await import('@/lib/supabase/client').then(m => m.getSupabaseClient().auth.getSession())).data.session?.access_token}`,
+                      },
+                      body: JSON.stringify({ facility_id: facilityId }),
+                    })
+                    if (res.ok) {
+                      window.location.href = '/dashboard/emergency'
+                    }
+                  } catch {}
+                  setEmergencyMode(false)
+                }}
                 style={{ padding: '0.75rem 1rem', background: '#6b7280', color: '#fff', border: 'none', borderRadius: '6px', fontWeight: 600, cursor: 'pointer' }}
               >
-                I need help here
+                🆘 I need help here
               </button>
             </div>
           </div>

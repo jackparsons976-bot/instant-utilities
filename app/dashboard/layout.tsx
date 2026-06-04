@@ -9,7 +9,7 @@ import { Sidebar } from '@/components/Sidebar'
 import { ErrorBoundary } from '@/components/ErrorBoundary'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { session, jwtClaims, loading } = useAuth()
+  const { session, jwtClaims, loading, timedOut } = useAuth()
   const router = useRouter()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
@@ -18,6 +18,21 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [session, loading, router])
 
   if (!loading && !session) return null
+
+  if (loading && timedOut) return (
+    <div className="center" style={{ flexDirection: 'column', gap: '1rem' }}>
+      <div className="spinner" />
+      <div style={{ textAlign: 'center', fontSize: '0.875rem', color: 'var(--muted)' }}>
+        Taking too long?{' '}
+        <button
+          onClick={() => { localStorage.clear(); sessionStorage.clear(); location.reload() }}
+          style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline', fontSize: 'inherit' }}
+        >
+          Click here to reload
+        </button>
+      </div>
+    </div>
+  )
 
   const role = jwtClaims?.app_metadata?.platform_role ?? jwtClaims?.platform_role ?? 'resident'
 

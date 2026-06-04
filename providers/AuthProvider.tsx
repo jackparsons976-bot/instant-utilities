@@ -14,9 +14,10 @@ interface AuthContextValue {
   session: Session | null
   jwtClaims: Record<string, any> | null
   loading: boolean
+  timedOut: boolean
 }
 
-const AuthContext = createContext<AuthContextValue>({ session: null, jwtClaims: null, loading: true })
+const AuthContext = createContext<AuthContextValue>({ session: null, jwtClaims: null, loading: true, timedOut: false })
 
 export function useAuth() {
   return useContext(AuthContext)
@@ -26,6 +27,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null)
   const [jwtClaims, setJwtClaims] = useState<Record<string, any> | null>(null)
   const [loading, setLoading] = useState(true)
+  const [timedOut, setTimedOut] = useState(false)
   const initialized = useRef(false)
 
   function applySession(s: Session | null) {
@@ -40,31 +42,52 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const supabase = getSupabaseClient()
 
     ;(async () => {
-      let cancelled = false
-      const timeout = new Promise<void>(resolve => setTimeout(() => {
-        cancelled = true
-        resolve()
-      }, 5000))
+      // Phase 1: getSession() reads from localStorage — it's synchronous in practice
+      // but we still guard it with a timeout in case the storage layer hangs (e.g.
+      // Safari ITP, corrupted IndexedDB). 8s is generous enough for any real hang.
+      let sessionTimedOut = false
+      let initialSession: import('@supabase/supabase-js').Session | null = null
 
       try {
-        await Promise.race([
-          (async () => {
-            const { data } = await supabase.auth.getSession()
-            if (cancelled) return
-            if (data.session) {
-              // Force a fresh JWT so hook claims are always current
-              const { data: refreshed } = await supabase.auth.refreshSession()
-              if (!cancelled) applySession(refreshed.session)
-            } else {
-              if (!cancelled) applySession(null)
-            }
-          })(),
-          timeout,
+        const result = await Promise.race([
+          supabase.auth.getSession(),
+          new Promise<never>((_, reject) =>
+            setTimeout(() => { sessionTimedOut = true; reject(new Error('timeout')) }, 8000)
+          ),
         ])
+        initialSession = (result as any).data?.session ?? null
       } catch {
-        if (!cancelled) applySession(null)
+        // Either a real error or our 8s timeout
       }
-      if (cancelled) applySession(null)
+
+      if (sessionTimedOut) {
+        // Storage is genuinely hung — clear it and surface the recovery UI
+        try { localStorage.clear() } catch {}
+        try { sessionStorage.clear() } catch {}
+        applySession(null)
+        setTimedOut(true)
+        setLoading(false)
+        return
+      }
+
+      if (!initialSession) {
+        // No session stored — user is logged out
+        applySession(null)
+        setLoading(false)
+        return
+      }
+
+      // Phase 2: We have a session — refresh the JWT so hook claims are current.
+      // This is a network call; we do NOT race it against a short timeout because
+      // a slow refresh should not log the user out. onAuthStateChange will fire
+      // TOKEN_REFRESHED when the SDK auto-refreshes in the background anyway.
+      try {
+        const { data: refreshed } = await supabase.auth.refreshSession()
+        applySession(refreshed.session ?? initialSession)
+      } catch {
+        // Refresh failed (offline, etc.) — use the stored session as-is
+        applySession(initialSession)
+      }
       setLoading(false)
     })()
 
@@ -84,7 +107,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ session, jwtClaims, loading }}>
+    <AuthContext.Provider value={{ session, jwtClaims, loading, timedOut }}>
       {children}
     </AuthContext.Provider>
   )

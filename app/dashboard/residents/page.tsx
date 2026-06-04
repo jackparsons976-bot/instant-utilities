@@ -63,12 +63,14 @@ export default function ResidentsPage() {
 
   useEffect(() => {
     if (!facilityId) { setLoading(false); return }
-    getSupabaseClient().schema('facility').from('members')
-      .select('id, user_id, role, unit_number, joined_at')
-      .eq('facility_id', facilityId)
-      .is('left_at', null)
-      .order('joined_at', { ascending: false })
-      .then(({ data }) => { setMembers((data ?? []) as Member[]); setLoading(false); loadInvitations() })
+    Promise.resolve(
+      getSupabaseClient().schema('facility').from('members')
+        .select('id, user_id, role, unit_number, joined_at')
+        .eq('facility_id', facilityId)
+        .is('left_at', null)
+        .order('joined_at', { ascending: false })
+        .then(({ data }) => { setMembers((data ?? []) as Member[]); setLoading(false); loadInvitations() })
+    ).catch(() => setLoading(false))
   }, [facilityId])
 
   async function saveUnit(memberId: string) {

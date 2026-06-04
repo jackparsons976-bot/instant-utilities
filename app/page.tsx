@@ -6,14 +6,29 @@ import Link from 'next/link'
 import { useAuth } from '@/providers/AuthProvider'
 
 export default function HomePage() {
-  const { session, loading } = useAuth()
+  const { session, loading, timedOut } = useAuth()
   const router = useRouter()
 
   useEffect(() => {
     if (!loading && session) router.replace('/dashboard')
   }, [session, loading, router])
 
-  if (loading) return <div className="center"><div className="spinner" /></div>
+  if (loading) return (
+    <div className="center" style={{ flexDirection: 'column', gap: '1rem' }}>
+      <div className="spinner" />
+      {timedOut && (
+        <div style={{ textAlign: 'center', fontSize: '0.875rem', color: 'var(--muted)' }}>
+          Taking too long?{' '}
+          <button
+            onClick={() => { localStorage.clear(); sessionStorage.clear(); location.reload() }}
+            style={{ background: 'none', border: 'none', color: 'var(--primary)', cursor: 'pointer', textDecoration: 'underline', fontSize: 'inherit' }}
+          >
+            Click here to reload
+          </button>
+        </div>
+      )}
+    </div>
+  )
 
   return (
     <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -47,6 +62,9 @@ export default function HomePage() {
         <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', justifyContent: 'center' }}>
           <Link href="/signup" className="btn btn-primary" style={{ padding: '0.65rem 1.5rem', fontSize: '1rem' }}>
             Get started free
+          </Link>
+          <Link href="#features" className="btn btn-outline" style={{ padding: '0.65rem 1.5rem', fontSize: '1rem' }}>
+            Learn more
           </Link>
           <Link href="/login" className="btn btn-outline" style={{ padding: '0.65rem 1.5rem', fontSize: '1rem' }}>
             Sign in

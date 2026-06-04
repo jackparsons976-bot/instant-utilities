@@ -19,7 +19,7 @@ const pwaConfig = withPWA({
 
 export default withSentryConfig(pwaConfig, {
   org: 'instant-utilities',
-  project: 'instant-utilities',
+  project: 'javascript-nextjs',
   authToken: process.env.SENTRY_AUTH_TOKEN,
   widenClientFileUpload: true,
   tunnelRoute: '/monitoring',

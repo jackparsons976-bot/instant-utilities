@@ -63,6 +63,7 @@ export default function MarketplacePage() {
     const sb = getSupabaseClient() as any
 
     async function load() {
+      try {
       const promises: Promise<any>[] = [
         sb.schema('marketplace').from('business_profiles')
           .select('id, name, description, business_type, contact_email, contact_phone')
@@ -110,6 +111,10 @@ export default function MarketplacePage() {
       setQuotes((qData ?? []) as Quote[])
       setJobs((jData ?? []) as Job[])
       setLoading(false)
+      } catch (err) {
+        console.error('Marketplace load error:', err)
+        setLoading(false)
+      }
     }
     load()
   }, [facilityId, session?.user?.id, canManageVendors, isVendorRole])

@@ -4,8 +4,6 @@ import { useState, useEffect } from 'react'
 import { useAuth } from '@/providers/AuthProvider'
 import { useToast } from '@/components/Toast'
 import { getSupabaseClient } from '@/lib/supabase/client'
-import { AppNav } from '@/components/AppNav'
-
 interface HouseholdMember {
   id: string
   display_name: string
@@ -52,7 +50,8 @@ export default function HouseholdPage() {
   const sb = getSupabaseClient() as any
 
   useEffect(() => {
-    if (authLoading || !userId || !facilityId) return
+    if (authLoading) return
+    if (!userId || !facilityId) { setLoading(false); return }
     loadMembers()
     if (isManager) loadUnitCounts()
   }, [authLoading, userId, facilityId])
@@ -171,9 +170,7 @@ export default function HouseholdPage() {
   )
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <AppNav />
-      <div style={{ padding: '2rem', maxWidth: '700px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+    <div style={{ maxWidth: '700px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
         <div>
           <h1 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.25rem' }}>Household Members</h1>
           <p style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>People in your household who may need emergency notifications or access.</p>
@@ -314,7 +311,6 @@ export default function HouseholdPage() {
             </div>
           </div>
         )}
-      </div>
     </div>
   )
 }

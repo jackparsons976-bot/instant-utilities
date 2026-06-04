@@ -32,7 +32,7 @@ export default function SettingsPage() {
       if (mData) setDisplayName(mData.display_name ?? '')
       setHasBusinessProfile(!!bpData)
       setLoading(false)
-    })
+    }).catch(() => setLoading(false))
   }, [session?.user?.id, facilityId])
 
   async function toggleMarketplace() {

@@ -32,12 +32,14 @@ export default function MaintenancePage() {
 
   useEffect(() => {
     if (!facilityId || !session) { setLoading(false); return }
-    getSupabaseClient().schema('facility').from('maintenance_requests')
-      .select('id, title, status, priority, category, created_at, description')
-      .eq('facility_id', facilityId)
-      .order('created_at', { ascending: false })
-      .limit(50)
-      .then(({ data }) => { setRequests((data ?? []) as Request[]); setLoading(false) })
+    Promise.resolve(
+      getSupabaseClient().schema('facility').from('maintenance_requests')
+        .select('id, title, status, priority, category, created_at, description')
+        .eq('facility_id', facilityId)
+        .order('created_at', { ascending: false })
+        .limit(50)
+        .then(({ data }) => { setRequests((data ?? []) as Request[]); setLoading(false) })
+    ).catch(() => setLoading(false))
   }, [facilityId, session?.user?.id])
 
   async function handleSubmit(e: FormEvent) {

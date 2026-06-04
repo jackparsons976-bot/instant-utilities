@@ -3,7 +3,6 @@
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/providers/AuthProvider'
 import { getSupabaseClient } from '@/lib/supabase/client'
-import { AppNav } from '@/components/AppNav'
 import { can } from '@/lib/permissions/can'
 import {
   BarChart, Bar, LineChart, Line,
@@ -94,20 +93,26 @@ export default function AnalyticsPage() {
   const sb = getSupabaseClient() as any
 
   useEffect(() => {
-    if (authLoading || !facilityId) return
+    if (authLoading) return
+    if (!facilityId) { setLoading(false); return }
     if (!can(jwtClaims, 'VIEW_ANALYTICS')) { setLoading(false); return }
     loadAll()
   }, [authLoading, facilityId])
 
   async function loadAll() {
     setLoading(true)
-    await Promise.all([
-      loadMetrics(),
-      loadIncidentFreq(),
-      loadMaintenanceWeekly(),
-      loadResponseTimes(),
-    ])
-    setLoading(false)
+    try {
+      await Promise.all([
+        loadMetrics(),
+        loadIncidentFreq(),
+        loadMaintenanceWeekly(),
+        loadResponseTimes(),
+      ])
+    } catch (err) {
+      console.error('Analytics load error:', err)
+    } finally {
+      setLoading(false)
+    }
   }
 
   async function loadMetrics() {
@@ -191,22 +196,15 @@ export default function AnalyticsPage() {
   if (authLoading) return <div className="center"><div className="spinner" /></div>
 
   if (!can(jwtClaims, 'VIEW_ANALYTICS')) {
-    return (
-      <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-        <AppNav />
-        <div style={{ padding: '2rem' }}>Access denied</div>
-      </div>
-    )
+    return <div style={{ padding: '2rem' }}>Access denied</div>
   }
 
   return (
-    <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
-      <AppNav />
-      <div style={{ padding: '2rem', maxWidth: '1100px', margin: '0 auto', width: '100%', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
-        <div>
-          <h1 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.25rem' }}>Analytics</h1>
-          <p style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>Facility performance metrics</p>
-        </div>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+      <div>
+        <h1 style={{ fontSize: '1.4rem', fontWeight: 700, marginBottom: '0.25rem' }}>Analytics</h1>
+        <p style={{ color: 'var(--muted)', fontSize: '0.875rem' }}>Facility performance metrics</p>
+      </div>
 
         {loading ? (
           <div className="center"><div className="spinner" /></div>
@@ -282,6 +280,5 @@ export default function AnalyticsPage() {
           </>
         )}
       </div>
-    </div>
   )
 }
