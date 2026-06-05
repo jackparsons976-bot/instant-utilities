@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react'
 import { useAuth } from '@/providers/AuthProvider'
+import { can } from '@/lib/permissions/can'
 import { useToast } from '@/components/Toast'
 import { getSupabaseClient } from '@/lib/supabase/client'
 interface HouseholdMember {
@@ -28,11 +29,7 @@ export default function HouseholdPage() {
   const facilityId =
     jwtClaims?.app_metadata?.active_facility_ids?.[0] ??
     jwtClaims?.active_facility_ids?.[0] ?? ''
-  const role =
-    jwtClaims?.app_metadata?.platform_role ??
-    jwtClaims?.platform_role ??
-    'resident'
-  const isManager = role === 'platform_admin' || role === 'facility_manager'
+  const isManager = can(jwtClaims, 'MANAGE_RESIDENTS')
 
   const [members, setMembers] = useState<HouseholdMember[]>([])
   const [unitCounts, setUnitCounts] = useState<UnitCount[]>([])

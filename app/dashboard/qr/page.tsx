@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/providers/AuthProvider'
+import { can } from '@/lib/permissions/can'
 import { useToast } from '@/components/Toast'
 import { getSupabaseClient } from '@/lib/supabase/client'
 import { setLocationFromQR } from '@/lib/location/tracker'
@@ -108,8 +109,7 @@ export default function QRPage() {
   const { jwtClaims } = useAuth()
   const facilityIds: string[] = jwtClaims?.app_metadata?.active_facility_ids ?? jwtClaims?.active_facility_ids ?? []
   const facilityId = facilityIds[0]
-  const role = (jwtClaims?.app_metadata?.platform_role ?? jwtClaims?.platform_role ?? 'resident') as string
-  const isManager = role === 'facility_manager' || role === 'platform_admin'
+  const isManager = can(jwtClaims, 'MANAGE_RESIDENTS')
   const userId = session?.user?.id ?? ''
 
   useEffect(() => {

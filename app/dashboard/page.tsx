@@ -144,7 +144,7 @@ export default function DashboardPage() {
 
   const userId  = session?.user?.id ?? ''
   const role    = jwtClaims?.app_metadata?.platform_role ?? jwtClaims?.platform_role ?? 'resident'
-  const isManager = role === 'facility_manager' || role === 'platform_admin'
+  const isManager = can(jwtClaims, 'MANAGE_RESIDENTS')
   const facilityIds: string[] = jwtClaims?.app_metadata?.active_facility_ids ?? jwtClaims?.active_facility_ids ?? []
   const facilityId = facilityIds[0] ?? null
 
